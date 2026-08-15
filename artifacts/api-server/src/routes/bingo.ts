@@ -276,7 +276,7 @@ export async function advanceBingoRound() {
     return { ...round, status: 'completed', selectionEndsAt: null };
   }
   const latestCall = calls.at(-1);
-  if (latestCall && Date.now() - latestCall.calledAt.getTime() < 2_500) return round;
+  if (latestCall && Date.now() - latestCall.calledAt.getTime() < 2_000) return round;
   const remaining = shuffledNumbers().filter((number) => !calls.some((call) => call.number === number));
   await db.insert(bingoCalls).values({ roundId: round.id, number: remaining[0]!, position: calls.length }).onConflictDoNothing({ target: [bingoCalls.roundId, bingoCalls.position] });
   logger.info({ roundId: round.id, callNumber: remaining[0], callPosition: calls.length + 1 }, "Bingo number called");
