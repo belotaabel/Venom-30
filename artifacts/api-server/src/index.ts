@@ -1,6 +1,6 @@
 import app, { attachRealtimeServer } from "./app";
 import { logger } from "./lib/logger";
-import { startTelegramPolling } from "./routes/telegram";
+import { registerTelegramWebhook } from "./routes/telegram";
 import { startBingoRoundInterval } from "./routes/bingo";
 
 const rawPort = process.env["PORT"];
@@ -26,5 +26,7 @@ const server = app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
   attachRealtimeServer(server);
   startBingoRoundInterval();
-  startTelegramPolling();
+  void registerTelegramWebhook().catch((error) => {
+    logger.error({ err: error }, "Telegram webhook registration failed");
+  });
 });
