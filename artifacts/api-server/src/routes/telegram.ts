@@ -374,6 +374,16 @@ async function submitWithdrawalRequest(
     await telegramRequest("sendMessage", { chat_id: chatId, text: "መጀመሪያ እባክዎ ይመዝገቡ።" });
     return;
   }
+  if (walletType === "win") {
+    const [depositTotal] = await db.select({ total: sql<string>`coalesce(sum(${depositRequests.amount}), 0)` })
+      .from(depositRequests)
+      .where(and(eq(depositRequests.telegramId, telegramId), eq(depositRequests.status, "approved")));
+    if (Number(depositTotal?.total ?? 0) < 50) {
+      await telegramRequest("sendMessage", { chat_id: chatId, text: "ዊዝድሮው ለማድረግ ቢያንስ 50 ብር ዲፖዚት ማድረግ ያስፈልጋል። በሕይወት ዘመንዎ ያደረጉት የተፈቀደ ዲፖዚት ከ50 ብር በታች ነው።" });
+      withdrawalSessions.delete(chatId);
+      return;
+    }
+  }
   const [request] = await db.insert(withdrawalRequests).values({
     telegramId,
     amount: amount.toFixed(2),
