@@ -815,6 +815,13 @@ async function handleTelegramUpdate(update: TelegramUpdate) {
 
   const text = message?.text?.trim();
   if (!message || !text) return;
+  if (text === "👤 Profile & Account") {
+    withdrawalSessions.delete(message.chat.id);
+    depositSessions.delete(message.chat.id);
+    promoSessions.delete(message.chat.id);
+    await sendProfileAccountMessage(message.chat.id, message.from?.id);
+    return;
+  }
   if (text === "/pending") {
     if (getAdminChatId() !== message.chat.id) {
       await telegramRequest("sendMessage", { chat_id: message.chat.id, text: "Unauthorized." });
