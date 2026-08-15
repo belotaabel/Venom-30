@@ -630,7 +630,7 @@ async function processAdminDecision(type: "deposit" | "withdrawal", action: "app
       }
     } else await tx.update(withdrawalRequests).set({ status: "approved", updatedAt }).where(and(eq(withdrawalRequests.id, id), eq(withdrawalRequests.status, "pending")));
     outcome = `Request #${id} approved.`;
-    userNotification = { telegramId: request.telegramId, text: type === "deposit" ? `✅ የዲፖዚት ጥያቄዎ #${id} ተፈቅዷል።\n💰 ${amount.toFixed(2)} ETB ወደ Play Wallet ቀሪ ሂሳብዎ ተጨምሯል።` : `Your withdrawal request #${id} was approved. ${amount.toFixed(2)} ETB was deducted from your ${withdrawalWallet === "agent" ? "agent wallet" : "win wallet"}.` };
+    userNotification = { telegramId: request.telegramId, text: type === "deposit" ? `✅ የዲፖዚት ጥያቄዎ #${id} ተፈቅዷል።\n💰 ${amount.toFixed(2)} ETB ወደ Play Wallet ቀሪ ሂሳብዎ ተጨምሯል።` : `🎉 እንኳን ደስ አለዎት!\n\n✅ የዊዝድሮው ጥያቄዎ #${id} ተፈቅዷል።\n💸 ${amount.toFixed(2)} ብር ወደ ቴሌብር ቁጥርዎ ይላካል።\n\n🙏 ስለተጠቀሙን እናመሰግናለን!` };
   });
   if (userNotification) await notifyWalletRequestUser(userNotification.telegramId, userNotification.text);
   await telegramRequest("sendMessage", { chat_id: adminChatId, text: outcome });
