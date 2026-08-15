@@ -306,7 +306,7 @@ async function sendProfileAccountMessage(chatId: number, telegramId?: number) {
     ? await db.query.telegramUsers.findFirst({ where: eq(telegramUsers.telegramId, telegramId) })
     : undefined;
   const name = user ? [user.firstName, user.lastName].filter(Boolean).join(" ") : "*****";
-  const phone = user?.phoneNumber ? `${user.phoneNumber.slice(0, 2)}****` : "09****";
+  const phone = user?.phoneNumber ?? "የለም";
   const playWallet = user?.playWalletBalance ?? "0.00";
   const winWallet = user?.winWalletBalance ?? "0.00";
 
