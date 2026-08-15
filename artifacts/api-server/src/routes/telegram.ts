@@ -578,11 +578,11 @@ async function processAdminDecision(type: "deposit" | "withdrawal", action: "app
     const creditedAmount = type === "deposit" ? amount + bonusAmount : amount;
     const withdrawalWallet = type === "withdrawal" && "walletType" in request && request.walletType === "agent" ? "agent" : "win";
     const before = Number(type === "deposit" ? user.playWalletBalance : withdrawalWallet === "agent" ? user.agentWalletBalance : user.winWalletBalance);
-    if (type === "withdrawal" && withdrawalWallet === "win" && before < amount) {
+    if (type === "withdrawal" && withdrawalWallet === "win" && before - amount < 10) {
       await tx.update(withdrawalRequests).set({ status: "rejected", updatedAt: new Date() }).where(and(eq(withdrawalRequests.id, id), eq(withdrawalRequests.status, "pending")));
       const walletLabel = "win wallet";
-      outcome = `Withdrawal #${id} rejected: insufficient ${walletLabel} balance.`;
-      userNotification = { telegramId: request.telegramId, text: `Your withdrawal request #${id} was rejected because your ${walletLabel} balance is insufficient.` };
+      outcome = `Withdrawal #${id} rejected: at least 10 ETB must remain in the ${walletLabel}.`;
+      userNotification = { telegramId: request.telegramId, text: `የዊዝድሮው ጥያቄዎ አልተፈቀደም። ከዊዝድሮው በኋላ ቢያንስ 10 ብር በWin Wallet ላይ መቅረት አለበት።` };
       return;
     }
 
