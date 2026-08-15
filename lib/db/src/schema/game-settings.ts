@@ -4,6 +4,7 @@ export const gameSettings = pgTable("game_settings", {
   id: integer("id").primaryKey().default(1),
   registrationBonus: numeric("registration_bonus", { precision: 12, scale: 2 }).notNull().default("10.00"),
   inviteBonus: numeric("invite_bonus", { precision: 12, scale: 2 }).notNull().default("10.00"),
+  depositBonusPercentage: numeric("deposit_bonus_percentage", { precision: 5, scale: 2 }).notNull().default("20.00"),
   mainPrizePercentage: numeric("main_prize_percentage", { precision: 5, scale: 2 }).notNull().default("80.00"),
   leaderboardPoolPercentage: numeric("leaderboard_pool_percentage", { precision: 5, scale: 2 }).notNull().default("10.00"),
   leaderboardFirstPercentage: numeric("leaderboard_first_percentage", { precision: 5, scale: 2 }).notNull().default("50.00"),

@@ -1122,6 +1122,7 @@ type AdminUser = { telegramId: number; chatId: number; firstName: string; lastNa
 type AdminGameSettings = {
   registrationBonus: string;
   inviteBonus: string;
+  depositBonusPercentage: string;
   mainPrizePercentage: string;
   leaderboardPoolPercentage: string;
   leaderboardFirstPercentage: string;
@@ -1394,7 +1395,7 @@ function AdminPanel() {
             <h2 className="mt-1 text-sm font-extrabold">የቦነስ፣ ፕራይዝ እና ጨዋታ ቅንብሮች</h2>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {[['registrationBonus', 'የሬጂስተር ቦነስ', 'ETB', '0', '100000', '0.01'], ['inviteBonus', 'የኢንቫይት ቦነስ', 'ETB', '0', '100000', '0.01'], ['mainPrizePercentage', 'ዋና ጨዋታ ፕራይዝ', '%', '0', '100', '0.01'], ['leaderboardPoolPercentage', 'ሊደርቦርድ ፕራይዝ ፑል', '%', '0', '100', '0.01'], ['leaderboardFirstPercentage', 'ሊደርቦርድ 1ኛ', '%', '0', '100', '0.01'], ['leaderboardSecondPercentage', 'ሊደርቦርድ 2ኛ', '%', '0', '100', '0.01'], ['leaderboardThirdPercentage', 'ሊደርቦርድ 3ኛ', '%', '0', '100', '0.01'], ['maxCardsPerPlayer', 'ከፍተኛ የካርድ መያዣ', 'ካርድ', '1', '500', '1'], ['leaderboardCardPurchasePoints', 'ካርድ ሲገዛ ነጥብ', 'ነጥብ', '-100', '100', '1'], ['leaderboardCardReleasePoints', 'ካርድ ሲለቀቅ ነጥብ', 'ነጥብ', '-100', '100', '1'], ['leaderboardWinPoints', 'ቢንጎ ሲያሸንፍ ነጥብ', 'ነጥብ', '-100', '100', '1']].map(([field, label, suffix, min, max, step]) => <label key={field} className="block text-xs font-bold text-[hsl(var(--foreground)/.85)]">
+            {[['registrationBonus', 'የሬጂስተር ቦነስ', 'ETB', '0', '100000', '0.01'], ['inviteBonus', 'የኢንቫይት ቦነስ', 'ETB', '0', '100000', '0.01'], ['depositBonusPercentage', 'የዲፖዚት ቦነስ', '%', '0', '100', '0.01'], ['mainPrizePercentage', 'ዋና ጨዋታ ፕራይዝ', '%', '0', '100', '0.01'], ['leaderboardPoolPercentage', 'ሊደርቦርድ ፕራይዝ ፑል', '%', '0', '100', '0.01'], ['leaderboardFirstPercentage', 'ሊደርቦርድ 1ኛ', '%', '0', '100', '0.01'], ['leaderboardSecondPercentage', 'ሊደርቦርድ 2ኛ', '%', '0', '100', '0.01'], ['leaderboardThirdPercentage', 'ሊደርቦርድ 3ኛ', '%', '0', '100', '0.01'], ['maxCardsPerPlayer', 'ከፍተኛ የካርድ መያዣ', 'ካርድ', '1', '500', '1'], ['leaderboardCardPurchasePoints', 'ካርድ ሲገዛ ነጥብ', 'ነጥብ', '-100', '100', '1'], ['leaderboardCardReleasePoints', 'ካርድ ሲለቀቅ ነጥብ', 'ነጥብ', '-100', '100', '1'], ['leaderboardWinPoints', 'ቢንጎ ሲያሸንፍ ነጥብ', 'ነጥብ', '-100', '100', '1']].map(([field, label, suffix, min, max, step]) => <label key={field} className="block text-xs font-bold text-[hsl(var(--foreground)/.85)]">
               <span>{label}</span>
               <div className="mt-1 flex items-center rounded-xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] px-3">
                 <input type="number" min={min} max={max} step={step} value={gameSettings[field as keyof AdminGameSettings]} onChange={(event) => updateSetting(field as keyof AdminGameSettings, event.target.value)} className="w-full bg-transparent py-2.5 font-mono text-sm font-bold text-[hsl(var(--foreground))] outline-none" />

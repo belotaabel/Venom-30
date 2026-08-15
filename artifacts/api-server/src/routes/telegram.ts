@@ -534,6 +534,7 @@ async function notifyWalletRequestUser(telegramId: number, text: string) {
 async function processAdminDecision(type: "deposit" | "withdrawal", action: "approve" | "reject", id: number, adminChatId: number) {
   let outcome = "Request was already processed.";
   let userNotification: { telegramId: number; text: string } | undefined;
+  const settings = await getGameSettings();
   await db.transaction(async (tx) => {
     const request = type === "deposit"
       ? (await tx.select().from(depositRequests).where(and(eq(depositRequests.id, id), eq(depositRequests.status, "pending"))).for("update").limit(1))[0]
@@ -563,6 +564,8 @@ async function processAdminDecision(type: "deposit" | "withdrawal", action: "app
     }
 
     const amount = Number(request.amount);
+    const bonusAmount = type === "deposit" ? amount * Number(settings.depositBonusPercentage) / 100 : 0;
+    const creditedAmount = type === "deposit" ? amount + bonusAmount : amount;
     const withdrawalWallet = type === "withdrawal" && "walletType" in request && request.walletType === "agent" ? "agent" : "win";
     const before = Number(type === "deposit" ? user.playWalletBalance : withdrawalWallet === "agent" ? user.agentWalletBalance : user.winWalletBalance);
     if (type === "withdrawal" && withdrawalWallet === "win" && before < amount) {
@@ -573,17 +576,17 @@ async function processAdminDecision(type: "deposit" | "withdrawal", action: "app
       return;
     }
 
-    const after = type === "deposit" ? before + amount : before - amount;
+    const after = type === "deposit" ? before + creditedAmount : before - amount;
     const reference = `${type}-request-${id}`;
     if (!(type === "withdrawal" && withdrawalWallet === "agent")) await tx.insert(walletTransactions).values({
       telegramId: request.telegramId,
       type,
-      amount: request.amount,
+      amount: type === "deposit" ? creditedAmount.toFixed(2) : request.amount,
       balanceBefore: before.toFixed(2),
       balanceAfter: after.toFixed(2),
       status: "completed",
       reference,
-      metadata: { requestId: id, approvedBy: adminChatId, source: "telegram_admin", wallet: type === "withdrawal" ? withdrawalWallet : "play" },
+      metadata: { requestId: id, approvedBy: adminChatId, source: "telegram_admin", wallet: type === "withdrawal" ? withdrawalWallet : "play", ...(type === "deposit" ? { depositAmount: amount, bonusPercentage: Number(settings.depositBonusPercentage), bonusAmount } : {}) },
     });
     if (!(type === "withdrawal" && withdrawalWallet === "agent")) await tx.update(telegramUsers).set({
       ...(type === "deposit" ? { playWalletBalance: after.toFixed(2) } : { winWalletBalance: after.toFixed(2) }),
@@ -630,7 +633,7 @@ async function processAdminDecision(type: "deposit" | "withdrawal", action: "app
       }
     } else await tx.update(withdrawalRequests).set({ status: "approved", updatedAt }).where(and(eq(withdrawalRequests.id, id), eq(withdrawalRequests.status, "pending")));
     outcome = `Request #${id} approved.`;
-    userNotification = { telegramId: request.telegramId, text: type === "deposit" ? `🎉 እንኳን ደስ አለዎት!\n\n✅ የዲፖዚት ጥያቄዎ #${id} ተፈቅዷል።\n💰 ${amount.toFixed(2)} ብር ወደ Play Wallet ቀሪ ሂሳብዎ ተጨምሯል።\n\n🙏 VENOMን ስለመረጡ እናመሰግናለን!` : `🎉 እንኳን ደስ አለዎት!\n\n✅ የዊዝድሮው ጥያቄዎ #${id} ተፈቅዷል።\n💸 ${amount.toFixed(2)} ብር ወደ ቴሌብር ቁጥርዎ ይላካል።\n\n🙏 VENOMን ስለመረጡ እናመሰግናለን!` };
+    userNotification = { telegramId: request.telegramId, text: type === "deposit" ? `🎉 እንኳን ደስ አለዎት!\n\n✅ የዲፖዚት ጥያቄዎ #${id} ተፈቅዷል።\n💰 ${amount.toFixed(2)} ብር + ${bonusAmount.toFixed(2)} ብር ቦነስ\n💳 ጠቅላላ ${creditedAmount.toFixed(2)} ብር ወደ Play Wallet ተጨምሯል።\n\n🙏 VENOMን ስለመረጡ እናመሰግናለን!` : `🎉 እንኳን ደስ አለዎት!\n\n✅ የዊዝድሮው ጥያቄዎ #${id} ተፈቅዷል።\n💸 ${amount.toFixed(2)} ብር ወደ ቴሌብር ቁጥርዎ ይላካል።\n\n🙏 VENOMን ስለመረጡ እናመሰግናለን!` };
   });
   if (userNotification) await notifyWalletRequestUser(userNotification.telegramId, userNotification.text);
   await telegramRequest("sendMessage", { chat_id: adminChatId, text: outcome });
@@ -1107,12 +1110,14 @@ function parseEditableGameSettings(value: unknown): EditableGameSettings | undef
   const settings = value as Record<string, unknown>;
   const percentageFields = ["mainPrizePercentage", "leaderboardPoolPercentage", "leaderboardFirstPercentage", "leaderboardSecondPercentage", "leaderboardThirdPercentage"] as const;
   const bonusFields = ["registrationBonus", "inviteBonus"] as const;
+  const depositBonusPercentage = Number(settings.depositBonusPercentage);
   const pointFields = ["leaderboardCardPurchasePoints", "leaderboardCardReleasePoints", "leaderboardWinPoints"] as const;
   const parsedPercentages = Object.fromEntries(percentageFields.map((field) => [field, Number(settings[field])])) as Record<typeof percentageFields[number], number>;
   const parsedBonuses = Object.fromEntries(bonusFields.map((field) => [field, Number(settings[field])])) as Record<typeof bonusFields[number], number>;
   const parsedPoints = Object.fromEntries(pointFields.map((field) => [field, Number(settings[field])])) as Record<typeof pointFields[number], number>;
   const maxCardsPerPlayer = Number(settings.maxCardsPerPlayer);
   if (percentageFields.some((field) => !Number.isFinite(parsedPercentages[field]) || parsedPercentages[field] < 0 || parsedPercentages[field] > 100)) return undefined;
+  if (!Number.isFinite(depositBonusPercentage) || depositBonusPercentage < 0 || depositBonusPercentage > 100) return undefined;
   if (bonusFields.some((field) => !Number.isFinite(parsedBonuses[field]) || parsedBonuses[field] < 0 || parsedBonuses[field] > 100_000)) return undefined;
   if (pointFields.some((field) => !Number.isInteger(parsedPoints[field]) || parsedPoints[field] < -100 || parsedPoints[field] > 100)) return undefined;
   if (!Number.isInteger(maxCardsPerPlayer) || maxCardsPerPlayer < 1 || maxCardsPerPlayer > 500) return undefined;
@@ -1120,6 +1125,7 @@ function parseEditableGameSettings(value: unknown): EditableGameSettings | undef
   return {
     registrationBonus: parsedBonuses.registrationBonus.toFixed(2),
     inviteBonus: parsedBonuses.inviteBonus.toFixed(2),
+    depositBonusPercentage: depositBonusPercentage.toFixed(2),
     ...Object.fromEntries(percentageFields.map((field) => [field, parsedPercentages[field].toFixed(2)])),
     maxCardsPerPlayer: String(maxCardsPerPlayer),
     ...Object.fromEntries(pointFields.map((field) => [field, parsedPoints[field].toFixed(2)])),
