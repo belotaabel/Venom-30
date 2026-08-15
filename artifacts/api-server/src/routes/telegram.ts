@@ -422,7 +422,8 @@ async function sendTelebirrPaymentInstructions(chatId: number, amount: number) {
   depositSessions.set(chatId, { step: "transaction-id", amount });
   await telegramRequest("sendMessage", {
     chat_id: chatId,
-    text: `መሙላት የፈለጉት መጠን: ${amount} ETB\n\nእባክዎ ከታች ወዳለው የTelebirr አካውንት ብሩን ያስገቡ።\nአካውንት: ${TELEBIRR_ACCOUNT_NUMBER}\n\nከዚያም የትራንዛክሽን ቁጥሩን (Transaction ID) እዚህ ላይ ይፃፉልን። ጥያቄዎ በአጭር ጊዜ ውስጥ ይስተናገዳል።`,
+    text: `መሙላት የፈለጉት መጠን: ${amount} ETB\n\nእባክዎ ከታች ወዳለው የTelebirr አካውንት ብሩን ያስገቡ።\n\n📱 አካውንት ቁጥር:\n<code>${TELEBIRR_ACCOUNT_NUMBER}</code>\n\nከዚያም የትራንዛክሽን ቁጥሩን (Transaction ID) እዚህ ላይ ይፃፉልን። ጥያቄዎ በአጭር ጊዜ ውስጥ ይስተናገዳል።`,
+    parse_mode: "HTML",
   });
 }
 
