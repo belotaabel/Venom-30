@@ -986,13 +986,10 @@ router.post("/telegram/webhook", async (req, res) => {
   }
 
   logger.info({ updateKeys: Object.keys(req.body ?? {}) }, "Telegram webhook update received");
-  try {
-    await handleTelegramUpdate(req.body as TelegramUpdate);
-    res.sendStatus(200);
-  } catch (error) {
+  res.sendStatus(200);
+  void handleTelegramUpdate(req.body as TelegramUpdate).catch((error) => {
     req.log?.error({ err: error }, "Telegram update handling failed");
-    res.sendStatus(200);
-  }
+  });
 });
 
 router.post("/telegram/wallet-flow", async (req, res) => {
