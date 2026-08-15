@@ -29,7 +29,7 @@ const AUTH_DATA_MAX_AGE_SECONDS = 86_400;
 type RequiredChannel = { username: string; title: string; url: string };
 
 function getRequiredChannels(): RequiredChannel[] {
-  return (process.env["TELEGRAM_REQUIRED_CHANNELS"]?.trim() || "@VenomBingo|Venom Bingo|https://t.me/VenomBingo,@VenomBingo2|Venom Bingo 2|https://t.me/VenomBingo2").split(",").map((entry) => entry.trim()).filter(Boolean).map((entry) => {
+  return "@VenomBingo|Venom Bingo|https://t.me/VenomBingo,@VenomBingo2|Venom Bingo 2|https://t.me/VenomBingo2".split(",").map((entry) => entry.trim()).filter(Boolean).map((entry) => {
     const [username, title = username, url = `https://t.me/${username.replace(/^@/, "")}`] = entry.split("|").map((value) => value.trim());
     return { username: username.startsWith("@") ? username : `@${username}`, title, url };
   });
