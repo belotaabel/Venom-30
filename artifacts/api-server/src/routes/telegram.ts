@@ -381,15 +381,26 @@ async function submitWithdrawalRequest(
       return;
     }
   }
-  const [request] = await db.insert(withdrawalRequests).values({
-    telegramId,
-    amount: amount.toFixed(2),
-    phone,
-    ownerName,
-    walletType,
-    status: "pending",
-  }).onConflictDoNothing({ target: [withdrawalRequests.telegramId, withdrawalRequests.amount, withdrawalRequests.phone, withdrawalRequests.ownerName] }).returning({ id: withdrawalRequests.id });
-  if (!request) {
+  const request = await db.transaction(async (tx) => {
+    const [userRow] = await tx.select().from(telegramUsers).where(eq(telegramUsers.telegramId, telegramId)).for("update").limit(1);
+    if (walletType === "win" && (!userRow || Number(userRow.winWalletBalance) - amount < 10)) return { insufficient: true as const };
+    const [inserted] = await tx.insert(withdrawalRequests).values({ telegramId, amount: amount.toFixed(2), phone, ownerName, walletType, status: "pending" })
+      .onConflictDoNothing({ target: [withdrawalRequests.telegramId, withdrawalRequests.amount, withdrawalRequests.phone, withdrawalRequests.ownerName] }).returning({ id: withdrawalRequests.id });
+    if (!inserted) return { duplicate: true as const };
+    if (walletType === "win" && userRow) {
+      const before = Number(userRow.winWalletBalance);
+      const after = (before - amount).toFixed(2);
+      await tx.update(telegramUsers).set({ winWalletBalance: after, updatedAt: new Date() }).where(eq(telegramUsers.telegramId, telegramId));
+      await tx.insert(walletTransactions).values({ telegramId, type: "withdrawal", amount: amount.toFixed(2), balanceBefore: before.toFixed(2), balanceAfter: after, status: "pending", reference: `withdrawal-request-${inserted.id}`, metadata: { source: "telegram_withdrawal", wallet: "win", withdrawalRequestId: inserted.id } });
+    }
+    return { id: inserted.id };
+  });
+  if ("insufficient" in request) {
+    await telegramRequest("sendMessage", { chat_id: chatId, text: "የዊዝድሮው ጥያቄዎ አልተቀበለም። ከዊዝድሮው በኋላ ቢያንስ 10 ብር በWin Wallet ላይ መቅረት አለበት።" });
+    withdrawalSessions.delete(chatId);
+    return;
+  }
+  if ("duplicate" in request) {
     await telegramRequest("sendMessage", { chat_id: chatId, text: "ይህ የወጪ ጥያቄ ቀድሞ ተመዝግቧል።" });
     withdrawalSessions.delete(chatId);
     return;
@@ -575,7 +586,7 @@ async function processAdminDecision(type: "deposit" | "withdrawal", action: "app
     const creditedAmount = type === "deposit" ? amount + bonusAmount : amount;
     const withdrawalWallet = type === "withdrawal" && "walletType" in request && request.walletType === "agent" ? "agent" : "win";
     const before = Number(type === "deposit" ? user.playWalletBalance : withdrawalWallet === "agent" ? user.agentWalletBalance : user.winWalletBalance);
-    if (type === "withdrawal" && withdrawalWallet === "win" && before - amount < 10) {
+    if (type === "withdrawal" && withdrawalWallet === "win" && before < 10) {
       await tx.update(withdrawalRequests).set({ status: "rejected", updatedAt: new Date() }).where(and(eq(withdrawalRequests.id, id), eq(withdrawalRequests.status, "pending")));
       const walletLabel = "win wallet";
       outcome = `Withdrawal #${id} rejected: at least 10 ETB must remain in the ${walletLabel}.`;
@@ -583,9 +594,11 @@ async function processAdminDecision(type: "deposit" | "withdrawal", action: "app
       return;
     }
 
-    const after = type === "deposit" ? before + creditedAmount : before - amount;
+    const after = type === "deposit" ? before + creditedAmount : withdrawalWallet === "win" ? before : before - amount;
     const reference = `${type}-request-${id}`;
-    if (!(type === "withdrawal" && withdrawalWallet === "agent")) await tx.insert(walletTransactions).values({
+    if (type === "withdrawal" && withdrawalWallet === "win") {
+      await tx.update(walletTransactions).set({ status: "completed" }).where(and(eq(walletTransactions.reference, reference), eq(walletTransactions.status, "pending")));
+    } else if (!(type === "withdrawal" && withdrawalWallet === "agent")) await tx.insert(walletTransactions).values({
       telegramId: request.telegramId,
       type,
       amount: type === "deposit" ? creditedAmount.toFixed(2) : request.amount,
@@ -595,7 +608,7 @@ async function processAdminDecision(type: "deposit" | "withdrawal", action: "app
       reference,
       metadata: { requestId: id, approvedBy: adminChatId, source: "telegram_admin", wallet: type === "withdrawal" ? withdrawalWallet : "play", ...(type === "deposit" ? { depositAmount: amount, bonusPercentage: Number(settings.depositBonusPercentage), bonusAmount } : {}) },
     });
-    if (!(type === "withdrawal" && withdrawalWallet === "agent")) await tx.update(telegramUsers).set({
+    if (type === "deposit" || withdrawalWallet === "agent") await tx.update(telegramUsers).set({
       ...(type === "deposit" ? { playWalletBalance: after.toFixed(2) } : { winWalletBalance: after.toFixed(2) }),
       updatedAt: new Date(),
     }).where(eq(telegramUsers.telegramId, request.telegramId));
