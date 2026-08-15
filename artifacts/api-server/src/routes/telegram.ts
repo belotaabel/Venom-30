@@ -1533,14 +1533,14 @@ export function startTelegramPolling() {
           allowed_updates: ["message", "callback_query"],
         });
         logger.info({ updateCount: updates.length, offset }, "Telegram polling response received");
-        for (const update of updates) {
-          offset = update.update_id + 1;
+        offset = updates.reduce((latest, update) => Math.max(latest, update.update_id + 1), offset);
+        await Promise.all(updates.map(async (update) => {
           try {
             await handleTelegramUpdate(update);
           } catch (error) {
             logger.error({ err: error, updateId: update.update_id }, "Telegram polling update handling failed");
           }
-        }
+        }));
       } catch (error) {
         logger.error({ err: error }, "Telegram polling request failed");
         await sleep(5000);
