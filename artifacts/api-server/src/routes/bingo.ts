@@ -117,12 +117,12 @@ async function getStoredRoundWinners(roundId: number) {
 }
 
 async function notifyLeaderboardFinalization(winners: LeaderboardWinner[], prizePool: string, roundCount: number) {
-  const channelId = Number(process.env["TELEGRAM_LEADERBOARD_CHANNEL_ID"]?.trim());
+  const channelId = process.env["TELEGRAM_LEADERBOARD_CHANNEL_ID"]?.trim() || "@VenomBingo2";
   const lines = winners.length
     ? winners.map((winner) => `${winner.rank}. ${winner.name || "Player"} — ${winner.amount} ብር`).join("\n")
     : "ሽልማት የሚያገኝ ተጫዋች አልተመዘገበም።";
   const message = `🏆 የሊደርቦርድ ውጤት\n\n${roundCount} ዙሮች ተጠናቀዋል።\nጠቅላላ ፑል: ${prizePool} ብር\n\n${lines}`;
-  if (Number.isSafeInteger(channelId) && channelId !== 0) {
+  if (channelId) {
     try {
       await telegramRequest("sendMessage", { chat_id: channelId, text: message });
     } catch (error) {
