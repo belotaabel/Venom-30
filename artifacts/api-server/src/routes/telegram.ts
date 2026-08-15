@@ -239,19 +239,8 @@ function getPaymentMethodKeyboard() {
   };
 }
 
-async function getMissingRequiredChannels(telegramId: number) {
-  const channels = getRequiredChannels();
-  const missing: RequiredChannel[] = [];
-  for (const channel of channels) {
-    try {
-      const member = await telegramRequest<{ status?: string }>("getChatMember", { chat_id: channel.username, user_id: telegramId });
-      if (!member.status || ["creator", "administrator", "member"].includes(member.status) === false) missing.push(channel);
-    } catch (error) {
-      logger.warn({ err: error, channel: channel.username, telegramId }, "Required channel membership check failed");
-      missing.push(channel);
-    }
-  }
-  return missing;
+async function getMissingRequiredChannels() {
+  return [] as RequiredChannel[];
 }
 
 async function sendRequiredChannelPrompt(chatId: number, missing: RequiredChannel[]) {
@@ -661,7 +650,7 @@ async function saveTelegramContact(message: NonNullable<TelegramUpdate["message"
   }
 
   const existingUser = await db.query.telegramUsers.findFirst({ where: eq(telegramUsers.telegramId, user.id), columns: { telegramId: true } });
-  const missingChannels = existingUser ? [] : await getMissingRequiredChannels(user.id);
+  const missingChannels = existingUser ? [] : await getMissingRequiredChannels();
   if (missingChannels.length) {
     pendingChannelRegistrations.set(user.id, message);
     await sendRequiredChannelPrompt(message.chat.id, missingChannels);
@@ -777,7 +766,7 @@ async function handleTelegramUpdate(update: TelegramUpdate) {
         await telegramRequest("answerCallbackQuery", { callback_query_id: callbackQuery.id, text: "የሚጠባበቅ ምዝገባ የለም።", show_alert: true });
         return;
       }
-      const missing = await getMissingRequiredChannels(telegramId);
+      const missing = await getMissingRequiredChannels();
       if (missing.length) {
         await telegramRequest("answerCallbackQuery", { callback_query_id: callbackQuery.id, text: "እባክዎ ሁሉንም ቻናሎች ይቀላቀሉ።", show_alert: true });
         await sendRequiredChannelPrompt(callbackQuery.message.chat.id, missing);
