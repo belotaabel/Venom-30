@@ -119,9 +119,9 @@ async function getStoredRoundWinners(roundId: number) {
 async function notifyLeaderboardFinalization(winners: LeaderboardWinner[], prizePool: string, roundCount: number) {
   const channelId = process.env["TELEGRAM_LEADERBOARD_CHANNEL_ID"]?.trim() || "@VenomBingo2";
   const lines = winners.length
-    ? winners.map((winner) => `${winner.rank}. ${winner.name || "Player"} — ${winner.amount} ብር`).join("\n")
+    ? winners.map((winner) => `${winner.rank === 1 ? "🥇" : winner.rank === 2 ? "🥈" : "🥉"} ${winner.name || "Player"} — ${winner.score} pts → ${winner.amount} ETB`).join("\n")
     : "ሽልማት የሚያገኝ ተጫዋች አልተመዘገበም።";
-  const message = `🏆 የሊደርቦርድ ውጤት\n\n${roundCount} ዙሮች ተጠናቀዋል።\nጠቅላላ ፑል: ${prizePool} ብር\n\n${lines}`;
+  const message = `🔥 ጃክፖቱ ተበላ!\n\nበ${roundCount} ዙር - ${prizePool} ብር ለታደሉት ተጫዋቾቻችን ተከፍሏል!\n\nVENOM BINGO 🔥🔥\n\n👇 ዕድለኞቹ:\n${lines}\n\n⚡ ቀጣዩ ዙር አሁን ተጀምሯል!`;
   if (channelId) {
     try {
       await telegramRequest("sendMessage", { chat_id: channelId, text: message });
@@ -129,13 +129,14 @@ async function notifyLeaderboardFinalization(winners: LeaderboardWinner[], prize
       logger.error({ err: error, channelId }, "Leaderboard channel notification failed");
     }
   }
-  for (const winner of winners) {
+  const users = await db.select({ chatId: telegramUsers.chatId }).from(telegramUsers);
+  await Promise.all(users.map(async ({ chatId }) => {
     try {
-      await telegramRequest("sendMessage", { chat_id: winner.chatId, text: `🎉 እንኳን ደስ አለዎት!\n\nበሊደርቦርድ ላይ ${winner.rank}ኛ ደረጃ ይዘዋል።\nያገኙት ሽልማት: ${winner.amount} ብር` });
+      await telegramRequest("sendMessage", { chat_id: chatId, text: message });
     } catch (error) {
-      logger.error({ err: error, telegramId: winner.telegramId }, "Leaderboard winner notification failed");
+      logger.error({ err: error, chatId }, "Leaderboard broadcast notification failed");
     }
-  }
+  }));
 }
 
 async function resolveRoundWinners(roundId: number): Promise<ResolveResult> {
