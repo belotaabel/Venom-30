@@ -146,6 +146,14 @@ export async function telegramRequest<T>(method: string, body: Record<string, un
   return result.result as T;
 }
 
+async function answerCallbackQuery(body: Record<string, unknown>) {
+  try {
+    await answerCallbackQuery( body);
+  } catch (error) {
+    logger.warn({ err: error }, "Telegram callback response expired or invalid");
+  }
+}
+
 async function telegramPhotoRequest<T>(photo: string, body: Record<string, unknown>): Promise<T> {
   const token = getBotToken();
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN is not configured");
@@ -756,28 +764,28 @@ async function handleTelegramUpdate(update: TelegramUpdate) {
     const callbackChatId = callbackQuery.message?.chat.id;
     const decision = callbackQuery.data?.match(/^(deposit|withdrawal):(approve|reject):(\d+)$/);
     if (decision && (!adminChatId || callbackChatId !== adminChatId)) {
-      await telegramRequest("answerCallbackQuery", { callback_query_id: callbackQuery.id, text: "Unauthorized.", show_alert: true });
+      await answerCallbackQuery( { callback_query_id: callbackQuery.id, text: "Unauthorized.", show_alert: true });
       return;
     }
     if (callbackQuery.data === "required-channel:verify" && callbackQuery.message) {
       const telegramId = callbackQuery.from?.id;
       const pending = telegramId ? pendingChannelRegistrations.get(telegramId) : undefined;
       if (!telegramId || !pending) {
-        await telegramRequest("answerCallbackQuery", { callback_query_id: callbackQuery.id, text: "የሚጠባበቅ ምዝገባ የለም።", show_alert: true });
+        await answerCallbackQuery( { callback_query_id: callbackQuery.id, text: "የሚጠባበቅ ምዝገባ የለም።", show_alert: true });
         return;
       }
       const missing = await getMissingRequiredChannels();
       if (missing.length) {
-        await telegramRequest("answerCallbackQuery", { callback_query_id: callbackQuery.id, text: "እባክዎ ሁሉንም ቻናሎች ይቀላቀሉ።", show_alert: true });
+        await answerCallbackQuery( { callback_query_id: callbackQuery.id, text: "እባክዎ ሁሉንም ቻናሎች ይቀላቀሉ።", show_alert: true });
         await sendRequiredChannelPrompt(callbackQuery.message.chat.id, missing);
         return;
       }
       pendingChannelRegistrations.delete(telegramId);
-      await telegramRequest("answerCallbackQuery", { callback_query_id: callbackQuery.id, text: "Membership verified." });
+      await answerCallbackQuery( { callback_query_id: callbackQuery.id, text: "Membership verified." });
       await saveTelegramContact(pending);
       return;
     }
-    await telegramRequest("answerCallbackQuery", { callback_query_id: callbackQuery.id });
+    await answerCallbackQuery( { callback_query_id: callbackQuery.id });
     if (callbackQuery.data === "deposit:telebirr" && callbackQuery.message) {
       await sendTelebirrAmountPrompt(callbackQuery.message.chat.id);
     } else if (decision && adminChatId) {
