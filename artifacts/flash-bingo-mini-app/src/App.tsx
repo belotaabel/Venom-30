@@ -542,8 +542,7 @@ function Home() {
       setRoundError(message);
     };
     void loadRound().catch(reportRoundError);
-    const timer = window.setInterval(() => { void loadRound().catch(reportRoundError); }, 3000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    return () => { cancelled = true; };
   }, []);
   const roundIdRef = useRef<number | null>(null);
   const purchaseStartedRef = useRef(false);
