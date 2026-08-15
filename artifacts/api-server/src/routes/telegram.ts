@@ -83,7 +83,7 @@ const depositSessions = new Map<number, DepositSession>();
 const withdrawalSessions = new Map<number, WithdrawalSession>();
 const promoSessions = new Set<number>();
 const pendingChannelRegistrations = new Map<number, NonNullable<TelegramUpdate["message"]>>();
-const SUPPORT_USERNAME = process.env["TELEGRAM_SUPPORT_USERNAME"]?.trim() || "@bingosupport";
+const SUPPORT_USERNAME = process.env["TELEGRAM_SUPPORT_USERNAME"]?.trim() || "@VenomBingoAssistant";
 const TELEBIRR_ACCOUNT_NUMBER = process.env["TELEBIRR_ACCOUNT_NUMBER"]?.trim() || "0975862132";
 
 function getBotToken() {
