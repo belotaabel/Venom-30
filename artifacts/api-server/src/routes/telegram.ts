@@ -561,6 +561,17 @@ async function sendSuspiciousUserReport(chatId: number) {
   });
 }
 
+async function sendTopBalanceReport(chatId: number) {
+  const users = await db.select({ telegramId: telegramUsers.telegramId, name: telegramUsers.firstName, phone: telegramUsers.phoneNumber, play: telegramUsers.playWalletBalance, win: telegramUsers.winWalletBalance })
+    .from(telegramUsers)
+    .orderBy(desc(sql`(${telegramUsers.playWalletBalance} + ${telegramUsers.winWalletBalance})`))
+    .limit(20);
+  const lines = users.length
+    ? users.map((user, index) => `${index + 1}. ${user.name} — ${(Number(user.play) + Number(user.win)).toFixed(2)} ብር (Play: ${user.play}, Win: ${user.win})\\n   ${user.phone} · ID: ${user.telegramId}`).join("\\n")
+    : "ምንም User አልተገኘም።";
+  await telegramRequest("sendMessage", { chat_id: chatId, text: `🏦 Top Balance Users\\n\\n${lines}` });
+}
+
 async function sendDailyWalletReport(chatId: number) {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
@@ -861,14 +872,15 @@ async function handleTelegramUpdate(update: TelegramUpdate) {
     await sendProfileAccountMessage(message.chat.id, message.from?.id);
     return;
   }
-  if (text === "/pending" || text === "/report" || text === "/daily-report") {
+  if (text === "/pending" || text === "/report" || text === "/daily-report" || text === "/top-balance") {
     if (getAdminChatId() !== message.chat.id) {
       await telegramRequest("sendMessage", { chat_id: message.chat.id, text: "Unauthorized." });
       return;
     }
     if (text === "/pending") await sendPendingRequests(message.chat.id);
     else if (text === "/report") await sendSuspiciousUserReport(message.chat.id);
-    else await sendDailyWalletReport(message.chat.id);
+    else if (text === "/daily-report") await sendDailyWalletReport(message.chat.id);
+    else await sendTopBalanceReport(message.chat.id);
     return;
   }
   const startMatch = text.match(/^\/start(?:\s+(?:re([0-9]+)|agent_([A-Z0-9]{6,24})))?$/i);
