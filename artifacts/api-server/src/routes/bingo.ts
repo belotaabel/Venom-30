@@ -116,12 +116,12 @@ async function getStoredRoundWinners(roundId: number) {
   }));
 }
 
-async function notifyLeaderboardFinalization(winners: LeaderboardWinner[], prizePool: string, roundCount: number) {
+async function notifyLeaderboardFinalization(winners: LeaderboardWinner[], prizePool: string, roundId: number) {
   const channelId = process.env["TELEGRAM_LEADERBOARD_CHANNEL_ID"]?.trim() || "@VenomBingo2";
   const lines = winners.length
     ? winners.map((winner) => `${winner.rank === 1 ? "🥇" : winner.rank === 2 ? "🥈" : "🥉"} ${winner.name || "Player"} — ${winner.score} pts → ${winner.amount} ETB`).join("\n")
     : "ሽልማት የሚያገኝ ተጫዋች አልተመዘገበም።";
-  const message = `🔥 ጃክፖቱ ተበላ!\n\nበ${roundCount} ዙር - ${prizePool} ብር ለታደሉት ተጫዋቾቻችን ተከፍሏል!\n\nVENOM BINGO 🔥🔥\n\n👇 ዕድለኞቹ:\n${lines}\n\n⚡ ቀጣዩ ዙር አሁን ተጀምሯል!`;
+  const message = `🔥 ጃክፖቱ ተበላ!\n\nበዙር #${roundId} - ${prizePool} ብር ለታደሉት ተጫዋቾቻችን ተከፍሏል!\n\nVENOM BINGO 🔥🔥\n\n👇 ዕድለኞቹ:\n${lines}\n\n⚡ ቀጣዩ ዙር አሁን ተጀምሯል!`;
   const configuredPlayUrl = (process.env["TELEGRAM_WEB_APP_URL"] ?? process.env["RENDER_EXTERNAL_URL"])?.trim();
   const playUrl = configuredPlayUrl ? (configuredPlayUrl.startsWith("http") ? configuredPlayUrl : `https://${configuredPlayUrl}`) : undefined;
   const replyMarkup = playUrl ? { inline_keyboard: [[{ text: "🎮 PLAY NOW", url: playUrl }]] } : undefined;
@@ -197,7 +197,7 @@ async function resolveRoundWinners(roundId: number): Promise<ResolveResult> {
     await tx.update(bingoRounds).set({ status: "completed", completedAt: new Date() }).where(and(eq(bingoRounds.id, roundId), inArray(bingoRounds.status, ["playing", "active"])));
     return { winners, leaderboard };
   });
-  if (result.leaderboard?.isFinalRound) void notifyLeaderboardFinalization(result.leaderboard.winners, result.leaderboard.prizePool, result.leaderboard.roundCount);
+  if (result.leaderboard?.isFinalRound) void notifyLeaderboardFinalization(result.leaderboard.winners, result.leaderboard.prizePool, roundId);
   return result;
 }
 
