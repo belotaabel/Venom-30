@@ -133,13 +133,14 @@ async function notifyLeaderboardFinalization(winners: LeaderboardWinner[], prize
     }
   }
   const users = await db.select({ chatId: telegramUsers.chatId }).from(telegramUsers);
-  await Promise.all(users.map(async ({ chatId }) => {
+  for (const { chatId } of users) {
     try {
       await telegramRequest("sendMessage", { chat_id: chatId, text: message, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) });
     } catch (error) {
       logger.error({ err: error, chatId }, "Leaderboard broadcast notification failed");
     }
-  }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 async function resolveRoundWinners(roundId: number): Promise<ResolveResult> {
