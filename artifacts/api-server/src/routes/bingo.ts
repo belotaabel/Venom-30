@@ -124,10 +124,11 @@ async function notifyLeaderboardFinalization(winners: LeaderboardWinner[], prize
   const message = `🔥 ጃክፖቱ ተበላ!\n\nበዙር #${roundId} - ${prizePool} ብር ለታደሉት ተጫዋቾቻችን ተከፍሏል!\n\nVENOM BINGO 🔥🔥\n\n👇 ዕድለኞቹ:\n${lines}\n\n⚡ ቀጣዩ ዙር አሁን ተጀምሯል!`;
   const configuredPlayUrl = (process.env["TELEGRAM_WEB_APP_URL"] ?? process.env["RENDER_EXTERNAL_URL"])?.trim();
   const playUrl = configuredPlayUrl ? (configuredPlayUrl.startsWith("http") ? configuredPlayUrl : `https://${configuredPlayUrl}`) : undefined;
-  const replyMarkup = playUrl ? { inline_keyboard: [[{ text: "🎮 PLAY NOW", url: playUrl }]] } : undefined;
+  const channelReplyMarkup = playUrl ? { inline_keyboard: [[{ text: "🎮 PLAY NOW", url: playUrl }]] } : undefined;
+  const userReplyMarkup = playUrl ? { inline_keyboard: [[{ text: "🎮 PLAY NOW", web_app: { url: playUrl } }]] } : undefined;
   if (channelId) {
     try {
-      await telegramRequest("sendMessage", { chat_id: channelId, text: message, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) });
+      await telegramRequest("sendMessage", { chat_id: channelId, text: message, ...(channelReplyMarkup ? { reply_markup: channelReplyMarkup } : {}) });
     } catch (error) {
       logger.error({ err: error, channelId }, "Leaderboard channel notification failed");
     }
@@ -135,7 +136,7 @@ async function notifyLeaderboardFinalization(winners: LeaderboardWinner[], prize
   const users = await db.select({ chatId: telegramUsers.chatId }).from(telegramUsers);
   for (const { chatId } of users) {
     try {
-      await telegramRequest("sendMessage", { chat_id: chatId, text: message, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) });
+      await telegramRequest("sendMessage", { chat_id: chatId, text: message, ...(userReplyMarkup ? { reply_markup: userReplyMarkup } : {}) });
     } catch (error) {
       logger.error({ err: error, chatId }, "Leaderboard broadcast notification failed");
     }
