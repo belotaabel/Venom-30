@@ -708,6 +708,10 @@ async function saveTelegramContact(message: NonNullable<TelegramUpdate["message"
       return;
     }
 
+    const [existingPhone] = await tx.select({ telegramId: telegramUsers.telegramId }).from(telegramUsers)
+      .where(and(eq(telegramUsers.phoneNumber, contact.phone_number), sql`${telegramUsers.telegramId} <> ${user.id}`)).limit(1);
+    if (existingPhone) return;
+
     const [referral] = await tx.select().from(telegramReferrals)
       .where(eq(telegramReferrals.referredTelegramId, user.id))
       .for("update").limit(1);
