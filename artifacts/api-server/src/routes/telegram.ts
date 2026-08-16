@@ -541,6 +541,26 @@ async function sendPendingRequests(chatId: number) {
   }
 }
 
+async function sendSuspiciousUserReport(chatId: number) {
+  const [duplicatePhones, topInviters] = await Promise.all([
+    db.select({ phone: telegramUsers.phoneNumber, count: sql<string>`count(*)` })
+      .from(telegramUsers).groupBy(telegramUsers.phoneNumber).having(sql`count(*) > 1`).orderBy(desc(sql`count(*)`)).limit(20),
+    db.select({ telegramId: telegramReferrals.inviterTelegramId, count: sql<string>`count(*)`, phone: telegramUsers.phoneNumber })
+      .from(telegramReferrals).leftJoin(telegramUsers, eq(telegramUsers.telegramId, telegramReferrals.inviterTelegramId))
+      .groupBy(telegramReferrals.inviterTelegramId, telegramUsers.phoneNumber).orderBy(desc(sql`count(*)`)).limit(20),
+  ]);
+  const duplicateText = duplicatePhones.length
+    ? duplicatePhones.map((item) => `${item.phone} — ${item.count} accounts`).join("\\n")
+    : "ምንም duplicate phone አልተገኘም።";
+  const inviterText = topInviters.length
+    ? topInviters.map((item) => `${item.telegramId} — ${item.count} referrals${item.phone ? ` — ${item.phone}` : ""}`).join("\\n")
+    : "ምንም referral አልተገኘም።";
+  await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: `🔎 Suspicious Users Report\\n\\n📱 Duplicate phones:\\n${duplicateText}\\n\\n👥 Top inviters:\\n${inviterText}\\n\\n⚠️ ይህ ሪፖርት ለምርመራ ነው፤ በማስረጃ ሳይረጋገጥ account አይከልከል።`,
+  });
+}
+
 async function notifyWalletRequestUser(telegramId: number, text: string) {
   const user = await db.query.telegramUsers.findFirst({
     where: eq(telegramUsers.telegramId, telegramId),
@@ -826,12 +846,13 @@ async function handleTelegramUpdate(update: TelegramUpdate) {
     await sendProfileAccountMessage(message.chat.id, message.from?.id);
     return;
   }
-  if (text === "/pending") {
+  if (text === "/pending" || text === "/report") {
     if (getAdminChatId() !== message.chat.id) {
       await telegramRequest("sendMessage", { chat_id: message.chat.id, text: "Unauthorized." });
       return;
     }
-    await sendPendingRequests(message.chat.id);
+    if (text === "/pending") await sendPendingRequests(message.chat.id);
+    else await sendSuspiciousUserReport(message.chat.id);
     return;
   }
   const startMatch = text.match(/^\/start(?:\s+(?:re([0-9]+)|agent_([A-Z0-9]{6,24})))?$/i);
