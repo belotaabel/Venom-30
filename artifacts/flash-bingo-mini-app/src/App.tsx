@@ -1155,6 +1155,9 @@ function AdminPanel() {
   const [broadcastPhoto, setBroadcastPhoto] = useState<File | null>(null);
   const [broadcastCaption, setBroadcastCaption] = useState('');
   const [broadcastResult, setBroadcastResult] = useState('');
+  const [adjustmentWallet, setAdjustmentWallet] = useState<'play' | 'win'>('play');
+  const [adjustmentAmount, setAdjustmentAmount] = useState('');
+  const [adjustmentReason, setAdjustmentReason] = useState('');
 
   const loadRequests = async () => {
     setError('');
@@ -1243,6 +1246,22 @@ function AdminPanel() {
     } finally {
       setActionKey('');
     }
+  };
+
+  const adjustBalance = async () => {
+    if (!selectedUser || !adjustmentAmount.trim() || !adjustmentReason.trim()) return;
+    setActionKey('balance-adjustment');
+    setError('');
+    try {
+      const response = await fetch(`${getApiUrl()}/api/telegram/admin/users/${selectedUser.telegramId}/balance-adjustment`, { method: 'POST', headers: { 'content-type': 'application/json', ...telegramHeaders() }, body: JSON.stringify({ wallet: adjustmentWallet, amount: adjustmentAmount, reason: adjustmentReason }) });
+      const data = await response.json() as { error?: string; after?: string };
+      if (!response.ok) throw new Error(data.error ?? 'ባላንሱን ማስተካከል አልተቻለም።');
+      setAdjustmentAmount('');
+      setAdjustmentReason('');
+      await loadRequests();
+    } catch (adjustmentError) {
+      setError(adjustmentError instanceof Error ? adjustmentError.message : 'ባላንሱን ማስተካከል አልተቻለም።');
+    } finally { setActionKey(''); }
   };
 
   const updateSetting = (field: keyof AdminGameSettings, value: string) => {
@@ -1462,7 +1481,7 @@ function AdminPanel() {
             <div className="mb-4 flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.12em] text-[hsl(var(--primary))]">USER DETAILS</p><h2 className="mt-1 text-xl font-extrabold">{selectedUser.firstName} {selectedUser.lastName ?? ''}</h2></div><button type="button" onClick={() => setSelectedUser(null)} className="rounded-lg px-2 py-1 text-xs font-bold text-[hsl(var(--muted-foreground))]">CLOSE</button></div>
             <div className="grid grid-cols-2 gap-3 text-xs"><div><p className="text-[hsl(var(--muted-foreground))]">Telegram ID</p><p className="mt-1 font-mono font-bold">{selectedUser.telegramId}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Chat ID</p><p className="mt-1 font-mono font-bold">{selectedUser.chatId}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Username</p><p className="mt-1 font-bold">{selectedUser.username ? `@${selectedUser.username}` : '—'}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Phone</p><p className="mt-1 font-mono font-bold">{selectedUser.phoneNumber}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Play Wallet</p><p className="mt-1 font-mono text-lg font-extrabold text-[hsl(var(--accent))]">{selectedUser.playWalletBalance} ETB</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Win Wallet</p><p className="mt-1 font-mono text-lg font-extrabold text-[hsl(var(--primary))]">{selectedUser.winWalletBalance} ETB</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Language</p><p className="mt-1 font-bold">{selectedUser.languageCode ?? '—'}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Registered</p><p className="mt-1 font-bold">{new Date(selectedUser.createdAt).toLocaleString()}</p></div></div>
             <div className="mt-4 rounded-xl border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] p-3"><p className="text-[10px] font-bold uppercase tracking-[.12em] text-[hsl(var(--accent))]">GAME STATUS</p><div className="mt-2 grid grid-cols-2 gap-3 text-xs"><div><p className="text-[hsl(var(--muted-foreground))]">Current game</p><p className="mt-1 font-extrabold uppercase text-[hsl(var(--accent))]">{selectedUser.gameStatus}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Round</p><p className="mt-1 font-mono font-bold">{selectedUser.activeRoundId ?? '—'}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Cards in round</p><p className="mt-1 font-mono font-bold">{selectedUser.activeRoundCards.length ? selectedUser.activeRoundCards.join(', ') : 'None'}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Last card selected</p><p className="mt-1 font-bold">{selectedUser.lastCardSelectedAt ? new Date(selectedUser.lastCardSelectedAt).toLocaleString() : '—'}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Balls called</p><p className="mt-1 font-mono font-bold">{selectedUser.calledBalls.length}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Round started</p><p className="mt-1 font-bold">{selectedUser.activeRoundStartedAt ? new Date(selectedUser.activeRoundStartedAt).toLocaleString() : '—'}</p></div></div></div>
-            <p className="mt-3 text-[11px] text-[hsl(var(--muted-foreground))]">Last updated: {new Date(selectedUser.updatedAt).toLocaleString()}</p>
+            <section className="mt-4 rounded-xl border border-[hsl(var(--primary)/.35)] bg-[hsl(var(--primary)/.08)] p-3"><p className="text-[10px] font-bold uppercase tracking-[.12em] text-[hsl(var(--primary))]">ADMIN BALANCE ADJUSTMENT</p><div className="mt-2 grid grid-cols-2 gap-2"><select value={adjustmentWallet} onChange={(event) => setAdjustmentWallet(event.target.value as 'play' | 'win')} className="rounded-xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] px-3 py-2 text-xs font-bold text-[hsl(var(--foreground))]"><option value="play">Play Wallet</option><option value="win">Win Wallet</option></select><input type="number" step="0.01" value={adjustmentAmount} onChange={(event) => setAdjustmentAmount(event.target.value)} placeholder="+ / - Amount" className="rounded-xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] px-3 py-2 text-xs font-bold text-[hsl(var(--foreground))]" /></div><input value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} placeholder="Reason" className="mt-2 w-full rounded-xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] px-3 py-2 text-xs font-bold text-[hsl(var(--foreground))]" /><button type="button" disabled={actionKey === 'balance-adjustment' || !adjustmentAmount || !adjustmentReason} onClick={() => void adjustBalance()} className="mt-2 w-full rounded-xl bg-[hsl(var(--primary))] px-3 py-2 text-xs font-extrabold text-[hsl(var(--primary-foreground))] disabled:opacity-50">{actionKey === 'balance-adjustment' ? 'በማስተካከል ላይ...' : 'ባላንስ አስተካክል'}</button></section><p className="mt-3 text-[11px] text-[hsl(var(--muted-foreground))]">Last updated: {new Date(selectedUser.updatedAt).toLocaleString()}</p>
           </article>}
           <div className="space-y-2">{users.filter((user) => `${user.firstName} ${user.lastName ?? ''} ${user.username ?? ''} ${user.phoneNumber} ${user.telegramId}`.toLowerCase().includes(userSearch.toLowerCase())).sort((left, right) => Number(right.playWalletBalance) + Number(right.winWalletBalance) - Number(left.playWalletBalance) - Number(left.winWalletBalance)).map((user) => <button type="button" key={user.telegramId} onClick={() => setSelectedUser(user)} className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] p-4 text-left transition-colors hover:border-[hsl(var(--primary)/.5)]"><span className="min-w-0"><span className="block truncate text-sm font-extrabold">{user.firstName} {user.lastName ?? ''}</span><span className="mt-1 block truncate text-xs text-[hsl(var(--muted-foreground))]">{user.username ? `@${user.username}` : user.phoneNumber} · {user.gameStatus}</span></span><span className="shrink-0 text-right"><span className="block font-mono text-sm font-bold text-[hsl(var(--accent))]">{user.playWalletBalance} ETB</span><span className="block text-[10px] text-[hsl(var(--muted-foreground))]">View details →</span></span></button>)}{users.length === 0 && <p className="rounded-2xl p-4 text-xs text-[hsl(var(--muted-foreground))]">ምንም user አልተገኘም።</p>}</div>
         </section>}

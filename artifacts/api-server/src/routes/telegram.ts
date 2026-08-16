@@ -1497,6 +1497,32 @@ router.put("/telegram/admin/settings", async (req, res) => {
   res.json(updated);
 });
 
+router.post("/telegram/admin/users/:telegramId/balance-adjustment", async (req, res) => {
+  const admin = requireAdmin(req, res);
+  if (!admin) return;
+  const telegramId = Number(req.params.telegramId);
+  const wallet = req.body?.wallet === "win" ? "win" : req.body?.wallet === "play" ? "play" : undefined;
+  const amount = Number(req.body?.amount);
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (!Number.isSafeInteger(telegramId) || !wallet || !Number.isFinite(amount) || amount === 0 || !reason || reason.length > 200) {
+    res.status(400).json({ error: "Enter a valid wallet, amount, and reason." });
+    return;
+  }
+  const result = await db.transaction(async (tx) => {
+    const [user] = await tx.select().from(telegramUsers).where(eq(telegramUsers.telegramId, telegramId)).for("update").limit(1);
+    if (!user) return undefined;
+    const field = wallet === "play" ? "playWalletBalance" : "winWalletBalance";
+    const before = Number(user[field]);
+    const after = before + amount;
+    if (after < 0) throw new Error("Balance cannot be negative");
+    await tx.update(telegramUsers).set({ [field]: after.toFixed(2), updatedAt: new Date() }).where(eq(telegramUsers.telegramId, telegramId));
+    await tx.insert(walletTransactions).values({ telegramId, type: "adjustment", amount: amount.toFixed(2), balanceBefore: before.toFixed(2), balanceAfter: after.toFixed(2), status: "completed", reference: `admin-adjustment:${Date.now()}:${telegramId}`, metadata: { source: "admin", wallet, reason, approvedBy: admin.user.id } });
+    return { wallet, before: before.toFixed(2), after: after.toFixed(2) };
+  });
+  if (!result) { res.status(404).json({ error: "User not found" }); return; }
+  res.json(result);
+});
+
 router.get("/telegram/admin/requests", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const [deposits, withdrawals, appWallet] = await Promise.all([
