@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, or, sql } from "drizzle-orm";
 import {
   appWalletTransactions,
   bingoCalls,
@@ -561,6 +561,21 @@ async function sendSuspiciousUserReport(chatId: number) {
   });
 }
 
+async function sendDailyWalletReport(chatId: number) {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const [deposits, withdrawals] = await Promise.all([
+    db.select({ count: sql<string>`count(*)`, total: sql<string>`coalesce(sum(${depositRequests.amount}), 0)` })
+      .from(depositRequests).where(and(eq(depositRequests.status, "approved"), gte(depositRequests.createdAt, startOfDay))),
+    db.select({ count: sql<string>`count(*)`, total: sql<string>`coalesce(sum(${withdrawalRequests.amount}), 0)` })
+      .from(withdrawalRequests).where(and(eq(withdrawalRequests.status, "approved"), gte(withdrawalRequests.createdAt, startOfDay))),
+  ]);
+  await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: `📊 የዛሬ የገቢና ወጪ ሪፖርት\\n\\n📥 ዲፖዚት\\nብዛት: ${deposits[0]?.count ?? "0"}\\nጠቅላላ: ${Number(deposits[0]?.total ?? 0).toFixed(2)} ብር\\n\\n📤 ዊዝድሮው\\nብዛት: ${withdrawals[0]?.count ?? "0"}\\nጠቅላላ: ${Number(withdrawals[0]?.total ?? 0).toFixed(2)} ብር\\n\\n💰 የቀኑ የተጣራ ልዩነት: ${(Number(deposits[0]?.total ?? 0) - Number(withdrawals[0]?.total ?? 0)).toFixed(2)} ብር`,
+  });
+}
+
 async function notifyWalletRequestUser(telegramId: number, text: string) {
   const user = await db.query.telegramUsers.findFirst({
     where: eq(telegramUsers.telegramId, telegramId),
@@ -846,13 +861,14 @@ async function handleTelegramUpdate(update: TelegramUpdate) {
     await sendProfileAccountMessage(message.chat.id, message.from?.id);
     return;
   }
-  if (text === "/pending" || text === "/report") {
+  if (text === "/pending" || text === "/report" || text === "/daily-report") {
     if (getAdminChatId() !== message.chat.id) {
       await telegramRequest("sendMessage", { chat_id: message.chat.id, text: "Unauthorized." });
       return;
     }
     if (text === "/pending") await sendPendingRequests(message.chat.id);
-    else await sendSuspiciousUserReport(message.chat.id);
+    else if (text === "/report") await sendSuspiciousUserReport(message.chat.id);
+    else await sendDailyWalletReport(message.chat.id);
     return;
   }
   const startMatch = text.match(/^\/start(?:\s+(?:re([0-9]+)|agent_([A-Z0-9]{6,24})))?$/i);
