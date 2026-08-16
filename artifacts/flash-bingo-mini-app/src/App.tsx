@@ -664,7 +664,7 @@ function Home() {
     }).finally(() => pendingCardsRef.current.delete(number));
   };
   const selectedCards = [...selected].sort((a, b) => a - b);
-  const canSelect = round?.status === 'selecting' && countdown > 0;
+  const canSelect = round?.status === 'selecting' && countdown > 5;
   const selectionStarting = round?.status === 'selecting' && countdown === 0;
   useEffect(() => {
     if (round?.status === 'playing' && selectedRef.current.size > 0) {

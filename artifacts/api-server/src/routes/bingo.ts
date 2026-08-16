@@ -336,7 +336,7 @@ router.post("/bingo/cards/reserve", async (req, res) => {
     const result = await db.transaction(async (tx) => {
       const [lockedRound] = await tx.select().from(bingoRounds).where(eq(bingoRounds.id, round.id)).for("update").limit(1);
       const [lockedUser] = await tx.select().from(telegramUsers).where(eq(telegramUsers.telegramId, user.telegramId)).for("update").limit(1);
-      if (!lockedRound || !lockedUser || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now()) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
+      if (!lockedRound || !lockedUser || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now() + 5_000) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
       const reference = `bingo_reservation:${lockedRound.id}:${user.telegramId}:${cardNumber}`;
       const [existingLedger] = await tx.select().from(walletTransactions).where(eq(walletTransactions.reference, reference)).limit(1);
       if (existingLedger) return { reserved: true, scoreDelta: 0, wallet: (existingLedger.metadata as { wallet?: string } | null)?.wallet ?? "play", playWalletBalance: lockedUser.playWalletBalance, winWalletBalance: lockedUser.winWalletBalance };
@@ -379,7 +379,7 @@ router.post("/bingo/cards/release", async (req, res) => {
     const result = await db.transaction(async (tx) => {
       const [lockedRound] = await tx.select().from(bingoRounds).where(eq(bingoRounds.id, round.id)).for("update").limit(1);
       const [lockedUser] = await tx.select().from(telegramUsers).where(eq(telegramUsers.telegramId, user.telegramId)).for("update").limit(1);
-      if (!lockedRound || !lockedUser || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now()) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
+      if (!lockedRound || !lockedUser || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now() + 5_000) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
       const [card] = await tx.select().from(bingoPlayerCards).where(and(eq(bingoPlayerCards.roundId, lockedRound.id), eq(bingoPlayerCards.telegramId, user.telegramId), eq(bingoPlayerCards.cardNumber, cardNumber))).for("update").limit(1);
       if (!card) return { released: false, scoreDelta: 0 };
       const reference = `bingo_reservation:${lockedRound.id}:${user.telegramId}:${cardNumber}`;
@@ -442,7 +442,7 @@ router.post("/bingo/cards", async (req, res) => {
     const result = await db.transaction(async (tx) => {
       const [lockedRound] = await tx.select().from(bingoRounds).where(eq(bingoRounds.id, round.id)).for("update").limit(1);
       const [lockedUser] = await tx.select().from(telegramUsers).where(eq(telegramUsers.telegramId, user.telegramId)).for("update").limit(1);
-      if (!lockedUser || !lockedRound || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now()) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
+      if (!lockedUser || !lockedRound || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now() + 5_000) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
       const existing = await tx.select({ cardNumber: bingoPlayerCards.cardNumber, telegramId: bingoPlayerCards.telegramId }).from(bingoPlayerCards).where(and(eq(bingoPlayerCards.roundId, lockedRound.id), inArray(bingoPlayerCards.cardNumber, cardNumbers))).for("update");
       const takenByOther = existing.find((card) => card.telegramId !== user.telegramId);
       if (takenByOther) throw Object.assign(new Error(`Card ${takenByOther.cardNumber} is already taken`), { status: 409 });
