@@ -1,9 +1,10 @@
-import { integer, numeric, pgTable, timestamp } from "drizzle-orm/pg-core";
+import { integer, numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const gameSettings = pgTable("game_settings", {
   id: integer("id").primaryKey().default(1),
   registrationBonus: numeric("registration_bonus", { precision: 12, scale: 2 }).notNull().default("10.00"),
   inviteBonus: numeric("invite_bonus", { precision: 12, scale: 2 }).notNull().default("10.00"),
+  supportUsername: text("support_username").notNull().default("@VenomBingoASISTANT1"),
   depositBonusPercentage: numeric("deposit_bonus_percentage", { precision: 5, scale: 2 }).notNull().default("20.00"),
   mainPrizePercentage: numeric("main_prize_percentage", { precision: 5, scale: 2 }).notNull().default("80.00"),
   leaderboardPoolPercentage: numeric("leaderboard_pool_percentage", { precision: 5, scale: 2 }).notNull().default("10.00"),

@@ -83,7 +83,6 @@ const depositSessions = new Map<number, DepositSession>();
 const withdrawalSessions = new Map<number, WithdrawalSession>();
 const promoSessions = new Set<number>();
 const pendingChannelRegistrations = new Map<number, NonNullable<TelegramUpdate["message"]>>();
-const SUPPORT_USERNAME = "@VenomBingoASISTANT1";
 const TELEBIRR_ACCOUNT_NUMBER = process.env["TELEBIRR_ACCOUNT_NUMBER"]?.trim() || "0975862132";
 
 function getBotToken() {
@@ -293,7 +292,7 @@ async function sendAgentDashboardMessage(chatId: number, telegramId?: number) {
   }
   await telegramRequest("sendMessage", {
     chat_id: chatId,
-    text: `እባክዎን ኤጀንት ለመሆን አድሚኑን ያነጋግሩ።\nSupport: ${SUPPORT_USERNAME}`,
+    text: `እባክዎን ኤጀንት ለመሆን አድሚኑን ያነጋግሩ።\nSupport: ${(await getGameSettings()).supportUsername}`,
     reply_markup: getMainKeyboard(chatId),
   });
 }
@@ -932,7 +931,7 @@ async function handleTelegramUpdate(update: TelegramUpdate) {
   if (text === "🆘 Support" || text === "/help") {
     await telegramRequest("sendMessage", {
       chat_id: message.chat.id,
-      text: `ለእርዳታ ቴሌግራም ላይ ${SUPPORT_USERNAME} ያነጋግሩን።`,
+      text: `ለእርዳታ ቴሌግራም ላይ ${(await getGameSettings()).supportUsername} ያነጋግሩን።`,
       reply_markup: getMainKeyboard(message.chat.id),
     });
     return;
@@ -1191,6 +1190,7 @@ function parseEditableGameSettings(value: unknown): EditableGameSettings | undef
   const settings = value as Record<string, unknown>;
   const percentageFields = ["mainPrizePercentage", "leaderboardPoolPercentage", "leaderboardFirstPercentage", "leaderboardSecondPercentage", "leaderboardThirdPercentage"] as const;
   const bonusFields = ["registrationBonus", "inviteBonus"] as const;
+  const supportUsername = typeof settings.supportUsername === "string" ? settings.supportUsername.trim() : "";
   const depositBonusPercentage = Number(settings.depositBonusPercentage);
   const pointFields = ["leaderboardCardPurchasePoints", "leaderboardCardReleasePoints", "leaderboardWinPoints"] as const;
   const parsedPercentages = Object.fromEntries(percentageFields.map((field) => [field, Number(settings[field])])) as Record<typeof percentageFields[number], number>;
@@ -1202,10 +1202,12 @@ function parseEditableGameSettings(value: unknown): EditableGameSettings | undef
   if (bonusFields.some((field) => !Number.isFinite(parsedBonuses[field]) || parsedBonuses[field] < 0 || parsedBonuses[field] > 100_000)) return undefined;
   if (pointFields.some((field) => !Number.isInteger(parsedPoints[field]) || parsedPoints[field] < -100 || parsedPoints[field] > 100)) return undefined;
   if (!Number.isInteger(maxCardsPerPlayer) || maxCardsPerPlayer < 1 || maxCardsPerPlayer > 500) return undefined;
+  if (!supportUsername) return undefined;
   if (parsedPercentages.mainPrizePercentage + parsedPercentages.leaderboardPoolPercentage > 100 || Math.abs(parsedPercentages.leaderboardFirstPercentage + parsedPercentages.leaderboardSecondPercentage + parsedPercentages.leaderboardThirdPercentage - 100) > 0.001) return undefined;
   return {
     registrationBonus: parsedBonuses.registrationBonus.toFixed(2),
     inviteBonus: parsedBonuses.inviteBonus.toFixed(2),
+    supportUsername: supportUsername.startsWith("@") ? supportUsername : `@${supportUsername}`,
     depositBonusPercentage: depositBonusPercentage.toFixed(2),
     ...Object.fromEntries(percentageFields.map((field) => [field, parsedPercentages[field].toFixed(2)])),
     maxCardsPerPlayer: String(maxCardsPerPlayer),

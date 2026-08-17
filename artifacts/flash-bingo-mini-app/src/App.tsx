@@ -1154,6 +1154,7 @@ type AdminUser = { telegramId: number; chatId: number; firstName: string; lastNa
 type AdminGameSettings = {
   registrationBonus: string;
   inviteBonus: string;
+  supportUsername: string;
   depositBonusPercentage: string;
   mainPrizePercentage: string;
   leaderboardPoolPercentage: string;
@@ -1445,6 +1446,7 @@ function AdminPanel() {
             <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[hsl(var(--accent))]">GAME SETTINGS</p>
             <h2 className="mt-1 text-sm font-extrabold">የቦነስ፣ ፕራይዝ እና ጨዋታ ቅንብሮች</h2>
           </div>
+          <label className="mb-3 block text-xs font-bold text-[hsl(var(--foreground)/.85)]"><span>የSupport Team username</span><input type="text" value={gameSettings.supportUsername} onChange={(event) => updateSetting('supportUsername', event.target.value)} placeholder="@SupportUsername" className="mt-1 w-full rounded-xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] px-3 py-2.5 font-mono text-sm font-bold text-[hsl(var(--foreground))] outline-none" /></label>
           <div className="grid grid-cols-2 gap-3">
             {[['registrationBonus', 'የሬጂስተር ቦነስ', 'ETB', '0', '100000', '0.01'], ['inviteBonus', 'የኢንቫይት ቦነስ', 'ETB', '0', '100000', '0.01'], ['depositBonusPercentage', 'የዲፖዚት ቦነስ', '%', '0', '100', '0.01'], ['mainPrizePercentage', 'ዋና ጨዋታ ፕራይዝ', '%', '0', '100', '0.01'], ['leaderboardPoolPercentage', 'ሊደርቦርድ ፕራይዝ ፑል', '%', '0', '100', '0.01'], ['leaderboardFirstPercentage', 'ሊደርቦርድ 1ኛ', '%', '0', '100', '0.01'], ['leaderboardSecondPercentage', 'ሊደርቦርድ 2ኛ', '%', '0', '100', '0.01'], ['leaderboardThirdPercentage', 'ሊደርቦርድ 3ኛ', '%', '0', '100', '0.01'], ['maxCardsPerPlayer', 'ከፍተኛ የካርድ መያዣ', 'ካርድ', '1', '500', '1'], ['leaderboardCardPurchasePoints', 'ካርድ ሲገዛ ነጥብ', 'ነጥብ', '-100', '100', '1'], ['leaderboardCardReleasePoints', 'ካርድ ሲለቀቅ ነጥብ', 'ነጥብ', '-100', '100', '1'], ['leaderboardWinPoints', 'ቢንጎ ሲያሸንፍ ነጥብ', 'ነጥብ', '-100', '100', '1']].map(([field, label, suffix, min, max, step]) => <label key={field} className="block text-xs font-bold text-[hsl(var(--foreground)/.85)]">
               <span>{label}</span>
