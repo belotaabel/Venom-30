@@ -1392,7 +1392,7 @@ function AdminPanel() {
   };
 
   const downloadPendingWithdrawals = () => {
-    if (!requests?.withdrawals.length) return;
+    if (!requests) return;
     const generatedAt = new Date();
     const lines = [
       'VENOM BINGO — PENDING WITHDRAWALS',
@@ -1536,7 +1536,7 @@ function AdminPanel() {
           <div className="space-y-3">{requests.deposits.length ? requests.deposits.map((request) => renderRequest(request, 'deposit')) : <p className="depth-surface rounded-2xl p-4 text-xs text-[hsl(var(--muted-foreground))]">ምንም የሚጠባበቅ ዲፖዚት የለም።</p>}</div>
         </section>
         <section>
-          <div className="mb-3 flex items-center justify-between gap-2"><h2 className="text-sm font-extrabold tracking-[.08em]">💸 WITHDRAWALS</h2><div className="flex items-center gap-2"><span className="rounded-full bg-[hsl(var(--primary)/.15)] px-2 py-1 text-xs font-bold text-[hsl(var(--primary))]">{requests.withdrawals.length}</span><button type="button" data-testid="button-download-pending-withdrawals" disabled={!requests.withdrawals.length} onClick={downloadPendingWithdrawals} className="rounded-lg border border-[hsl(var(--accent)/.5)] bg-[hsl(var(--accent)/.12)] px-2 py-1 text-[10px] font-extrabold text-[hsl(var(--accent))] disabled:cursor-not-allowed disabled:opacity-40">TXT ላክ</button></div></div>
+          <div className="mb-3 flex items-center justify-between gap-2"><h2 className="text-sm font-extrabold tracking-[.08em]">💸 WITHDRAWALS</h2><div className="flex items-center gap-2"><span className="rounded-full bg-[hsl(var(--primary)/.15)] px-2 py-1 text-xs font-bold text-[hsl(var(--primary))]">{requests.withdrawals.length}</span><button type="button" data-testid="button-download-pending-withdrawals" onClick={downloadPendingWithdrawals} className="rounded-lg border border-[hsl(var(--accent)/.5)] bg-[hsl(var(--accent)/.12)] px-2 py-1 text-[10px] font-extrabold text-[hsl(var(--accent))] disabled:cursor-not-allowed disabled:opacity-40">TXT ላክ</button></div></div>
           <div className="space-y-3">{requests.withdrawals.length ? requests.withdrawals.map((request) => renderRequest(request, 'withdrawal')) : <p className="depth-surface rounded-2xl p-4 text-xs text-[hsl(var(--muted-foreground))]">ምንም የሚጠባበቅ ዊዝድሮ የለም።</p>}</div>
         </section>
         </div>
