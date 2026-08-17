@@ -502,6 +502,7 @@ type RoundData = {
   takenCardNumbers: number[];
   pot: string;
   maxCardsPerPlayer?: number;
+  uniquePlayers?: number;
   winner?: { telegramId?: number; name?: string; cardNumber: number; payout: string; status: string };
   winners?: Array<{ telegramId?: number; name?: string; cardNumber: number; payout: string; status: string }>;
 };
@@ -602,6 +603,7 @@ function Home() {
         selectionEndsAt: state.selectionEndsAt ?? null,
         calls: (state.calledBalls ?? []).map((number, position) => ({ number, position, calledAt: new Date().toISOString() })),
         takenCardNumbers: state.cardsTaken ?? current?.takenCardNumbers ?? [],
+        uniquePlayers: current?.uniquePlayers,
         pot: String(state.netPrizePool ?? current?.pot ?? 0),
         winner: state.winner,
       }));
@@ -707,6 +709,7 @@ function Home() {
         <Stats play={totalBalance} pot={Number(round?.pot ?? '0')} cardsTaken={taken.size} win={walletBalances.win} />
         <SoundCountdown muted={muted} onToggle={() => setMuted((value) => !value)} countdown={countdown} status={round?.status ?? 'loading'} />
         {roundError && <div role="alert" data-testid="status-round-error" className="mx-3 mt-3 rounded-xl border border-[hsl(var(--destructive)/.55)] bg-[hsl(var(--destructive)/.1)] px-3 py-2 text-center text-xs font-bold text-[hsl(var(--destructive))]">{roundError}</div>}
+        {round?.status === 'selecting' && (round.uniquePlayers ?? 0) < 2 && <div role="status" data-testid="status-waiting-for-player" className="mx-3 mt-3 rounded-2xl border border-[hsl(var(--primary)/.65)] bg-[hsl(var(--primary)/.12)] px-4 py-3 text-center shadow-[0_0_20px_hsl(var(--primary)/.12)]"><p className="text-sm font-extrabold text-[hsl(var(--primary))]">⏳ ሁለተኛ ተጫዋች እየተጠበቀ ነው</p><p className="mt-1 text-xs font-bold text-[hsl(var(--foreground)/.8)]">ቢያንስ 2 የተለያዩ ተጫዋቾች ሲኖሩ ጨዋታው ይጀምራል። የካርድ ምርጫ ይቀጥላል።</p></div>}
         {round?.status === 'selecting' && countdown > 0 && countdown <= 5 && <div role="status" data-testid="status-card-lock" className="mx-3 mt-3 rounded-2xl border border-[hsl(var(--accent)/.75)] bg-[linear-gradient(135deg,hsl(var(--accent)/.18),hsl(var(--primary)/.12))] px-4 py-3 text-center shadow-[0_0_22px_hsl(var(--accent)/.18)] animate-pulse"><p className="text-sm font-extrabold text-[hsl(var(--accent))]">🔒 ካርድ መያዣ ሊቆለፍ ነው!</p><p className="mt-1 text-xs font-bold text-[hsl(var(--foreground)/.8)]">{countdown} ሰከንድ ቀርቷል — ካርድዎን አሁኑኑ ይምረጡ</p></div>}
         {selectionStarting && <div role="status" data-testid="status-round-transition" className="mx-3 mt-3 rounded-xl border border-[hsl(var(--primary)/.55)] bg-[hsl(var(--primary)/.1)] px-3 py-2 text-center text-xs font-bold text-[hsl(var(--primary))]">ጨዋታው እየተጀመረ ነው፤ እባክዎ ይጠብቁ</div>}
         <div className="relative min-h-0 flex-1 overflow-y-auto"><NumberGrid selected={selected} taken={taken} onToggle={toggle} canSelect={canSelect} maxCards={maxCards} />{round?.status === 'playing' && selectedCards.length === 0 && <div role="status" data-testid="status-game-in-progress" className="absolute inset-0 z-10 grid place-items-center bg-[hsl(156_70%_5%/.82)] px-6 text-center backdrop-blur-sm"><div className="rounded-2xl border border-[hsl(var(--primary)/.55)] bg-[hsl(156_48%_10%)] px-5 py-4 text-sm font-extrabold text-[hsl(var(--primary))] shadow-xl">GAME IN PROGRESS<br /><span className="mt-1 block text-xs font-medium text-[hsl(var(--foreground)/.72)]">wait for next round</span></div></div>}</div>

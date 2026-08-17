@@ -25,6 +25,7 @@ type BingoRoundSnapshot = {
   takenCardNumbers: number[];
   pot: string;
   maxCardsPerPlayer: number;
+  uniquePlayers: number;
   winner?: BingoWinner;
   winners: BingoWinner[];
 };
@@ -43,11 +44,11 @@ export async function getBingoRoundSnapshot(roundId?: number): Promise<BingoRoun
   if (!round) throw new Error("Bingo round not found");
   const [calls, cards] = await Promise.all([
     db.query.bingoCalls.findMany({ where: eq(bingoCalls.roundId, round.id), orderBy: [asc(bingoCalls.position)] }),
-    db.query.bingoPlayerCards.findMany({ where: eq(bingoPlayerCards.roundId, round.id), columns: { cardNumber: true } }),
+    db.query.bingoPlayerCards.findMany({ where: eq(bingoPlayerCards.roundId, round.id), columns: { cardNumber: true, telegramId: true } }),
   ]);
   const winners = await getStoredRoundWinners(round.id);
   const settings = await getGameSettings();
-  return { id: round.id, status: round.status, startedAt: round.startedAt, selectionEndsAt: round.selectionEndsAt, calls, takenCardNumbers: cards.map((card) => card.cardNumber), pot: getBingoPayoutAmount(cards.length, settings), maxCardsPerPlayer: Number(settings.maxCardsPerPlayer), winner: winners[0], winners };
+  return { id: round.id, status: round.status, startedAt: round.startedAt, selectionEndsAt: round.selectionEndsAt, calls, takenCardNumbers: cards.map((card) => card.cardNumber), pot: getBingoPayoutAmount(cards.length, settings), maxCardsPerPlayer: Number(settings.maxCardsPerPlayer), uniquePlayers: new Set(cards.map((card) => card.telegramId)).size, winner: winners[0], winners };
 }
 
 export async function publishBingoRoundUpdate(roundId?: number) {
