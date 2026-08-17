@@ -53,6 +53,7 @@ async function awardBingoPayoutInTransaction(tx: PayoutTransaction, input: Bingo
   await tx.insert(walletTransactions).values({
     telegramId: input.telegramId,
     type: "bingo_payout",
+    wallet: "win",
     amount: input.amount,
     balanceBefore,
     balanceAfter,

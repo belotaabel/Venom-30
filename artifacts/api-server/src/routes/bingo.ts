@@ -6,6 +6,7 @@ import { logger } from "../lib/logger";
 import { awardBingoPayout } from "../lib/payout";
 import { getGameSettings, type EditableGameSettings } from "../lib/game-settings";
 import { finalizeLeaderboardRound, recordLeaderboardScore, type LeaderboardWinner } from "../lib/leaderboard";
+import { resetInactiveBonusWallets, splitCardStake } from "../lib/wallet";
 
 const router: IRouter = Router();
 const CARD_COUNT = 500;
@@ -24,6 +25,7 @@ type BingoRoundSnapshot = {
   takenCardNumbers: number[];
   pot: string;
   maxCardsPerPlayer: number;
+  uniquePlayers: number;
   winner?: BingoWinner;
   winners: BingoWinner[];
 };
@@ -42,11 +44,11 @@ export async function getBingoRoundSnapshot(roundId?: number): Promise<BingoRoun
   if (!round) throw new Error("Bingo round not found");
   const [calls, cards] = await Promise.all([
     db.query.bingoCalls.findMany({ where: eq(bingoCalls.roundId, round.id), orderBy: [asc(bingoCalls.position)] }),
-    db.query.bingoPlayerCards.findMany({ where: eq(bingoPlayerCards.roundId, round.id), columns: { cardNumber: true } }),
+    db.query.bingoPlayerCards.findMany({ where: eq(bingoPlayerCards.roundId, round.id), columns: { cardNumber: true, telegramId: true } }),
   ]);
   const winners = await getStoredRoundWinners(round.id);
   const settings = await getGameSettings();
-  return { id: round.id, status: round.status, startedAt: round.startedAt, selectionEndsAt: round.selectionEndsAt, calls, takenCardNumbers: cards.map((card) => card.cardNumber), pot: getBingoPayoutAmount(cards.length, settings), maxCardsPerPlayer: Number(settings.maxCardsPerPlayer), winner: winners[0], winners };
+  return { id: round.id, status: round.status, startedAt: round.startedAt, selectionEndsAt: round.selectionEndsAt, calls, takenCardNumbers: cards.map((card) => card.cardNumber), pot: getBingoPayoutAmount(cards.length, settings), maxCardsPerPlayer: Number(settings.maxCardsPerPlayer), uniquePlayers: new Set(cards.map((card) => card.telegramId)).size, winner: winners[0], winners };
 }
 
 export async function publishBingoRoundUpdate(roundId?: number) {
@@ -116,25 +118,31 @@ async function getStoredRoundWinners(roundId: number) {
   }));
 }
 
-async function notifyLeaderboardFinalization(winners: LeaderboardWinner[], prizePool: string, roundCount: number) {
-  const channelId = Number(process.env["TELEGRAM_LEADERBOARD_CHANNEL_ID"]?.trim());
+async function notifyLeaderboardFinalization(winners: LeaderboardWinner[], prizePool: string, roundId: number) {
+  const channelId = process.env["TELEGRAM_LEADERBOARD_CHANNEL_ID"]?.trim() || "@VenomBingo2";
   const lines = winners.length
-    ? winners.map((winner) => `${winner.rank}. ${winner.name || "Player"} — ${winner.amount} ብር`).join("\n")
+    ? winners.map((winner) => `${winner.rank === 1 ? "🥇" : winner.rank === 2 ? "🥈" : "🥉"} ${winner.name || "Player"} — ${winner.score} pts → ${winner.amount} ETB`).join("\n")
     : "ሽልማት የሚያገኝ ተጫዋች አልተመዘገበም።";
-  const message = `🏆 የሊደርቦርድ ውጤት\n\n${roundCount} ዙሮች ተጠናቀዋል።\nጠቅላላ ፑል: ${prizePool} ብር\n\n${lines}`;
-  if (Number.isSafeInteger(channelId) && channelId !== 0) {
+  const message = `🔥 ጃክፖቱ ተበላ!\n\nበዙር #${roundId} - ${prizePool} ብር ለታደሉት ተጫዋቾቻችን ተከፍሏል!\n\nVENOM BINGO 🔥🔥\n\n👇 ዕድለኞቹ:\n${lines}\n\n⚡ ቀጣዩ ዙር አሁን ተጀምሯል!`;
+  const configuredPlayUrl = (process.env["TELEGRAM_WEB_APP_URL"] ?? process.env["RENDER_EXTERNAL_URL"])?.trim();
+  const playUrl = configuredPlayUrl ? (configuredPlayUrl.startsWith("http") ? configuredPlayUrl : `https://${configuredPlayUrl}`) : undefined;
+  const channelReplyMarkup = playUrl ? { inline_keyboard: [[{ text: "🎮 PLAY NOW", url: playUrl }]] } : undefined;
+  const userReplyMarkup = playUrl ? { inline_keyboard: [[{ text: "🎮 PLAY NOW", web_app: { url: playUrl } }]] } : undefined;
+  if (channelId) {
     try {
-      await telegramRequest("sendMessage", { chat_id: channelId, text: message });
+      await telegramRequest("sendMessage", { chat_id: channelId, text: message, ...(channelReplyMarkup ? { reply_markup: channelReplyMarkup } : {}) });
     } catch (error) {
       logger.error({ err: error, channelId }, "Leaderboard channel notification failed");
     }
   }
-  for (const winner of winners) {
+  const users = await db.select({ chatId: telegramUsers.chatId }).from(telegramUsers);
+  for (const { chatId } of users) {
     try {
-      await telegramRequest("sendMessage", { chat_id: winner.chatId, text: `🎉 እንኳን ደስ አለዎት!\n\nበሊደርቦርድ ላይ ${winner.rank}ኛ ደረጃ ይዘዋል።\nያገኙት ሽልማት: ${winner.amount} ብር` });
+      await telegramRequest("sendMessage", { chat_id: chatId, text: message, ...(userReplyMarkup ? { reply_markup: userReplyMarkup } : {}) });
     } catch (error) {
-      logger.error({ err: error, telegramId: winner.telegramId }, "Leaderboard winner notification failed");
+      logger.error({ err: error, chatId }, "Leaderboard broadcast notification failed");
     }
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
 
@@ -192,7 +200,7 @@ async function resolveRoundWinners(roundId: number): Promise<ResolveResult> {
     await tx.update(bingoRounds).set({ status: "completed", completedAt: new Date() }).where(and(eq(bingoRounds.id, roundId), inArray(bingoRounds.status, ["playing", "active"])));
     return { winners, leaderboard };
   });
-  if (result.leaderboard?.isFinalRound) void notifyLeaderboardFinalization(result.leaderboard.winners, result.leaderboard.prizePool, result.leaderboard.roundCount);
+  if (result.leaderboard?.isFinalRound) void notifyLeaderboardFinalization(result.leaderboard.winners, result.leaderboard.prizePool, roundId);
   return result;
 }
 
@@ -248,17 +256,22 @@ export async function advanceBingoRound() {
     const nextStatus = await db.transaction(async (tx) => {
       const [lockedRound] = await tx.select().from(bingoRounds).where(eq(bingoRounds.id, round.id)).for("update").limit(1);
       if (!lockedRound || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() > Date.now()) return lockedRound?.status;
-      const cards = await tx.select({ id: bingoPlayerCards.id }).from(bingoPlayerCards).where(eq(bingoPlayerCards.roundId, round.id)).limit(1);
-      if (cards.length < 1) {
+      const cards = await tx.select({ telegramId: bingoPlayerCards.telegramId }).from(bingoPlayerCards).where(eq(bingoPlayerCards.roundId, round.id));
+      const uniquePlayers = new Set(cards.map((card) => card.telegramId));
+      if (uniquePlayers.size === 0) {
         await tx.update(bingoRounds).set({ status: "completed", completedAt: new Date() }).where(eq(bingoRounds.id, round.id));
         return "completed";
+      }
+      if (uniquePlayers.size < 2) {
+        await tx.update(bingoRounds).set({ selectionEndsAt: new Date(Date.now() + SELECTION_DURATION_MS) }).where(eq(bingoRounds.id, round.id));
+        return "selecting";
       }
       await tx.update(bingoRounds).set({ status: "playing", startedAt: new Date(), selectionEndsAt: null }).where(eq(bingoRounds.id, round.id));
       return "playing";
     });
-    logger.info({ roundId: round.id, cardCount: nextStatus === "playing" ? 1 : 0, nextStatus }, "Bingo selection round transitioned");
+    logger.info({ roundId: round.id, uniquePlayers: nextStatus === "playing" ? 2 : undefined, nextStatus }, "Bingo selection round transitioned");
     if (nextStatus === "completed") return ensureActiveBingoRound();
-    round = { ...round, status: "playing" };
+    if (nextStatus === "playing") round = { ...round, status: "playing" };
   }
   if (round.status === "selecting") return round;
   const cards = await db.select({ id: bingoPlayerCards.id, telegramId: bingoPlayerCards.telegramId }).from(bingoPlayerCards).where(eq(bingoPlayerCards.roundId, round.id));
@@ -276,7 +289,7 @@ export async function advanceBingoRound() {
     return { ...round, status: 'completed', selectionEndsAt: null };
   }
   const latestCall = calls.at(-1);
-  if (latestCall && Date.now() - latestCall.calledAt.getTime() < 2_500) return round;
+  if (latestCall && Date.now() - latestCall.calledAt.getTime() < 2_200) return round;
   const remaining = shuffledNumbers().filter((number) => !calls.some((call) => call.number === number));
   await db.insert(bingoCalls).values({ roundId: round.id, number: remaining[0]!, position: calls.length }).onConflictDoNothing({ target: [bingoCalls.roundId, bingoCalls.position] });
   logger.info({ roundId: round.id, callNumber: remaining[0], callPosition: calls.length + 1 }, "Bingo number called");
@@ -331,7 +344,7 @@ router.post("/bingo/cards/reserve", async (req, res) => {
     const result = await db.transaction(async (tx) => {
       const [lockedRound] = await tx.select().from(bingoRounds).where(eq(bingoRounds.id, round.id)).for("update").limit(1);
       const [lockedUser] = await tx.select().from(telegramUsers).where(eq(telegramUsers.telegramId, user.telegramId)).for("update").limit(1);
-      if (!lockedRound || !lockedUser || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now()) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
+      if (!lockedRound || !lockedUser || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now() + 5_000) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
       const reference = `bingo_reservation:${lockedRound.id}:${user.telegramId}:${cardNumber}`;
       const [existingLedger] = await tx.select().from(walletTransactions).where(eq(walletTransactions.reference, reference)).limit(1);
       if (existingLedger) return { reserved: true, scoreDelta: 0, wallet: (existingLedger.metadata as { wallet?: string } | null)?.wallet ?? "play", playWalletBalance: lockedUser.playWalletBalance, winWalletBalance: lockedUser.winWalletBalance };
@@ -339,18 +352,16 @@ router.post("/bingo/cards/reserve", async (req, res) => {
       if (existingCard) throw Object.assign(new Error("This card is already taken"), { status: 409 });
       const currentCards = await tx.select({ id: bingoPlayerCards.id }).from(bingoPlayerCards).where(and(eq(bingoPlayerCards.roundId, lockedRound.id), eq(bingoPlayerCards.telegramId, user.telegramId))).for("update");
       if (currentCards.length >= maxCardsPerPlayer) throw Object.assign(new Error(`You can select at most ${maxCardsPerPlayer} cards`), { status: 400 });
-      const playBalance = Number(lockedUser.playWalletBalance);
-      const winBalance = Number(lockedUser.winWalletBalance);
-      const wallet = playBalance >= CARD_STAKE ? "play" : winBalance >= CARD_STAKE ? "win" : undefined;
-      if (!wallet) throw Object.assign(new Error("Insufficient balance in play and win wallets"), { status: 402 });
-      const balance = wallet === "play" ? playBalance : winBalance;
-      const before = balance;
-      const balanceAfter = (before - CARD_STAKE).toFixed(2);
+      const split = splitCardStake(lockedUser.bonusWalletBalance, lockedUser.playWalletBalance, lockedUser.winWalletBalance, CARD_STAKE);
+      if (!split) throw Object.assign(new Error("Insufficient balance in bonus, play, and win wallets"), { status: 402 });
+      const bonusAfter = (Number(lockedUser.bonusWalletBalance) - split.fromBonus).toFixed(2);
+      const playAfter = (Number(lockedUser.playWalletBalance) - split.fromPlay).toFixed(2);
+      const winAfter = (Number(lockedUser.winWalletBalance) - split.fromWin).toFixed(2);
       await tx.insert(bingoPlayerCards).values({ roundId: lockedRound.id, telegramId: user.telegramId, cardNumber, grid: buildCard(cardNumber) });
-      await tx.update(telegramUsers).set({ ...(wallet === "play" ? { playWalletBalance: balanceAfter } : { winWalletBalance: balanceAfter }), updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
-      await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", amount: (-CARD_STAKE).toFixed(2), balanceBefore: before.toFixed(2), balanceAfter, status: "completed", reference, metadata: { roundId: lockedRound.id, cardNumber, stake: CARD_STAKE, wallet } });
+      await tx.update(telegramUsers).set({ bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter, bonusWalletLastPlayedAt: new Date(), updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
+      await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", wallet: split.fromBonus > 0 ? "bonus" : split.fromPlay > 0 ? "cash_play" : "win", amount: (-CARD_STAKE).toFixed(2), balanceBefore: CARD_STAKE.toFixed(2), balanceAfter: "0.00", status: "completed", reference, metadata: { roundId: lockedRound.id, cardNumber, stake: CARD_STAKE, bonusAmount: split.fromBonus, playAmount: split.fromPlay, winAmount: split.fromWin } });
       await recordLeaderboardScore(tx, lockedRound.id, user.telegramId, "card_purchase", Number(settings.leaderboardCardPurchasePoints), `leaderboard:purchase:${lockedRound.id}:${user.telegramId}:${cardNumber}`);
-      return { reserved: true, scoreDelta: Number(settings.leaderboardCardPurchasePoints), wallet, playWalletBalance: wallet === "play" ? balanceAfter : lockedUser.playWalletBalance, winWalletBalance: wallet === "win" ? balanceAfter : lockedUser.winWalletBalance };
+      return { reserved: true, scoreDelta: Number(settings.leaderboardCardPurchasePoints), wallet: split.fromBonus > 0 ? "bonus" : split.fromPlay > 0 ? "play" : "win", bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter };
     });
     logger.info({ roundId: round.id, telegramId: user.telegramId, cardNumber, wallet: result.wallet }, "Bingo card reserved");
     await publishBingoRoundUpdate();
@@ -374,19 +385,23 @@ router.post("/bingo/cards/release", async (req, res) => {
     const result = await db.transaction(async (tx) => {
       const [lockedRound] = await tx.select().from(bingoRounds).where(eq(bingoRounds.id, round.id)).for("update").limit(1);
       const [lockedUser] = await tx.select().from(telegramUsers).where(eq(telegramUsers.telegramId, user.telegramId)).for("update").limit(1);
-      if (!lockedRound || !lockedUser || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now()) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
+      if (!lockedRound || !lockedUser || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now() + 5_000) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
       const [card] = await tx.select().from(bingoPlayerCards).where(and(eq(bingoPlayerCards.roundId, lockedRound.id), eq(bingoPlayerCards.telegramId, user.telegramId), eq(bingoPlayerCards.cardNumber, cardNumber))).for("update").limit(1);
       if (!card) return { released: false, scoreDelta: 0 };
       const reference = `bingo_reservation:${lockedRound.id}:${user.telegramId}:${cardNumber}`;
       const [ledger] = await tx.select().from(walletTransactions).where(eq(walletTransactions.reference, reference)).limit(1);
-      const wallet = (ledger?.metadata as { wallet?: string } | null)?.wallet === "win" ? "win" : "play";
-      const balanceBefore = Number(wallet === "play" ? lockedUser.playWalletBalance : lockedUser.winWalletBalance);
-      const balanceAfter = (balanceBefore + CARD_STAKE).toFixed(2);
+      const metadata = ledger?.metadata as { bonusAmount?: number; playAmount?: number; winAmount?: number } | null;
+      const bonusAmount = Number(metadata?.bonusAmount ?? 0);
+      const playAmount = Number(metadata?.playAmount ?? 0);
+      const winAmount = Number(metadata?.winAmount ?? 0);
+      const bonusAfter = (Number(lockedUser.bonusWalletBalance) + bonusAmount).toFixed(2);
+      const playAfter = (Number(lockedUser.playWalletBalance) + playAmount).toFixed(2);
+      const winAfter = (Number(lockedUser.winWalletBalance) + winAmount).toFixed(2);
       await tx.delete(bingoPlayerCards).where(eq(bingoPlayerCards.id, card.id));
-      await tx.update(telegramUsers).set({ ...(wallet === "play" ? { playWalletBalance: balanceAfter } : { winWalletBalance: balanceAfter }), updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
-      await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", amount: CARD_STAKE.toFixed(2), balanceBefore: balanceBefore.toFixed(2), balanceAfter, status: "completed", reference: `bingo_release:${lockedRound.id}:${user.telegramId}:${cardNumber}`, metadata: { roundId: lockedRound.id, cardNumber, stake: CARD_STAKE, wallet, source: reference } });
+      await tx.update(telegramUsers).set({ bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter, updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
+      await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", wallet: bonusAmount > 0 ? "bonus" : "cash_play", amount: CARD_STAKE.toFixed(2), balanceBefore: "0.00", balanceAfter: CARD_STAKE.toFixed(2), status: "completed", reference: `bingo_release:${lockedRound.id}:${user.telegramId}:${cardNumber}`, metadata: { roundId: lockedRound.id, cardNumber, stake: CARD_STAKE, bonusAmount, playAmount, winAmount, source: reference } });
       await recordLeaderboardScore(tx, lockedRound.id, user.telegramId, "card_release", Number(settings.leaderboardCardReleasePoints), `leaderboard:release:${lockedRound.id}:${user.telegramId}:${cardNumber}`);
-      return { released: true, scoreDelta: Number(settings.leaderboardCardReleasePoints), wallet, playWalletBalance: wallet === "play" ? balanceAfter : lockedUser.playWalletBalance, winWalletBalance: wallet === "win" ? balanceAfter : lockedUser.winWalletBalance };
+      return { released: true, scoreDelta: Number(settings.leaderboardCardReleasePoints), wallet: bonusAmount > 0 ? "bonus" : playAmount > 0 ? "play" : "win", bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter };
     });
     logger.info({ roundId: round.id, telegramId: user.telegramId, cardNumber, wallet: result.wallet, released: result.released }, "Bingo card release processed");
     await publishBingoRoundUpdate();
@@ -437,7 +452,7 @@ router.post("/bingo/cards", async (req, res) => {
     const result = await db.transaction(async (tx) => {
       const [lockedRound] = await tx.select().from(bingoRounds).where(eq(bingoRounds.id, round.id)).for("update").limit(1);
       const [lockedUser] = await tx.select().from(telegramUsers).where(eq(telegramUsers.telegramId, user.telegramId)).for("update").limit(1);
-      if (!lockedUser || !lockedRound || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now()) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
+      if (!lockedUser || !lockedRound || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() <= Date.now() + 5_000) throw Object.assign(new Error("Card selection is closed"), { status: 409 });
       const existing = await tx.select({ cardNumber: bingoPlayerCards.cardNumber, telegramId: bingoPlayerCards.telegramId }).from(bingoPlayerCards).where(and(eq(bingoPlayerCards.roundId, lockedRound.id), inArray(bingoPlayerCards.cardNumber, cardNumbers))).for("update");
       const takenByOther = existing.find((card) => card.telegramId !== user.telegramId);
       if (takenByOther) throw Object.assign(new Error(`Card ${takenByOther.cardNumber} is already taken`), { status: 409 });
@@ -451,26 +466,24 @@ router.post("/bingo/cards", async (req, res) => {
         return { cards, playWalletBalance: lockedUser.playWalletBalance, winWalletBalance: lockedUser.winWalletBalance };
       }
       const total = missing.length * CARD_STAKE;
-      const playBalance = Number(lockedUser.playWalletBalance);
-      const winBalance = Number(lockedUser.winWalletBalance);
-      const wallet = playBalance >= total ? "play" : winBalance >= total ? "win" : undefined;
-      if (!wallet) throw Object.assign(new Error("Insufficient balance in play and win wallets"), { status: 402 });
-      const balance = wallet === "play" ? playBalance : winBalance;
+      const split = splitCardStake(lockedUser.bonusWalletBalance, lockedUser.playWalletBalance, lockedUser.winWalletBalance, total);
+      if (!split) throw Object.assign(new Error("Insufficient balance in bonus, play, and win wallets"), { status: 402 });
       if (missing.length) await tx.insert(bingoPlayerCards).values(missing.map((cardNumber) => ({ roundId: lockedRound.id, telegramId: user.telegramId, cardNumber, grid: buildCard(cardNumber) })));
-      const before = balance;
-      const after = (before - total).toFixed(2);
-      await tx.update(telegramUsers).set({ ...(wallet === "play" ? { playWalletBalance: after } : { winWalletBalance: after }), updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
+      const bonusAfter = (Number(lockedUser.bonusWalletBalance) - split.fromBonus).toFixed(2);
+      const playAfter = (Number(lockedUser.playWalletBalance) - split.fromPlay).toFixed(2);
+      const winAfter = (Number(lockedUser.winWalletBalance) - split.fromWin).toFixed(2);
+      await tx.update(telegramUsers).set({ bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter, bonusWalletLastPlayedAt: new Date(), updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
       if (total > 0) {
-        await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", amount: (-total).toFixed(2), balanceBefore: before.toFixed(2), balanceAfter: after, status: "completed", reference, metadata: { roundId: lockedRound.id, cardNumbers: missing, stake: CARD_STAKE, wallet } });
+        await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", wallet: split.fromBonus > 0 ? "bonus" : split.fromPlay > 0 ? "cash_play" : "win", amount: (-total).toFixed(2), balanceBefore: total.toFixed(2), balanceAfter: "0.00", status: "completed", reference, metadata: { roundId: lockedRound.id, cardNumbers: missing, stake: CARD_STAKE, bonusAmount: split.fromBonus, playAmount: split.fromPlay, winAmount: split.fromWin } });
         for (const cardNumber of missing) {
           await recordLeaderboardScore(tx, lockedRound.id, user.telegramId, "card_purchase", Number(settings.leaderboardCardPurchasePoints), `leaderboard:purchase:${lockedRound.id}:${user.telegramId}:${cardNumber}`);
         }
       }
       const cards = await tx.select().from(bingoPlayerCards).where(and(eq(bingoPlayerCards.roundId, lockedRound.id), eq(bingoPlayerCards.telegramId, user.telegramId))).orderBy(asc(bingoPlayerCards.cardNumber));
-      return { cards, playWalletBalance: wallet === "play" ? after : lockedUser.playWalletBalance, winWalletBalance: wallet === "win" ? after : lockedUser.winWalletBalance };
+      return { cards, bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter };
     });
     await publishBingoRoundUpdate();
-    res.status(201).json({ roundId: round.id, cards: result.cards, playWalletBalance: result.playWalletBalance, winWalletBalance: result.winWalletBalance });
+    res.status(201).json({ roundId: round.id, cards: result.cards, bonusWalletBalance: result.bonusWalletBalance, playWalletBalance: result.playWalletBalance, winWalletBalance: result.winWalletBalance });
   } catch (error) {
     const status = (error as { status?: number }).status;
     if (status) { res.status(status).json({ error: (error as Error).message }); return; }
@@ -486,11 +499,13 @@ export function startBingoRoundInterval() {
   globalState.__bingoInterval = setInterval(() => {
     if (globalState.__bingoTickRunning) return;
     globalState.__bingoTickRunning = true;
+    void resetInactiveBonusWallets().catch((error) => logger.error({ err: error }, "Bonus wallet reset failed"));
     void advanceBingoRound()
       .then((progressedRound) => publishBingoRoundUpdate(progressedRound.id))
       .catch((error) => logger.error({ err: error }, "Bingo round tick failed"))
       .finally(() => { globalState.__bingoTickRunning = false; });
   }, 2_500);
+  void resetInactiveBonusWallets().catch((error) => logger.error({ err: error }, "Bonus wallet reset failed"));
   void advanceBingoRound().then((progressedRound) => publishBingoRoundUpdate(progressedRound.id)).catch((error) => logger.error({ err: error }, "Bingo round startup failed"));
 }
 

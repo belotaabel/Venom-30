@@ -12,7 +12,7 @@ import {
 } from "@workspace/db";
 
 export type LeaderboardTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
-export type LeaderboardWinner = { telegramId: number; name: string; rank: number; amount: string; chatId: number };
+export type LeaderboardWinner = { telegramId: number; name: string; rank: number; score: number; amount: string; chatId: number };
 
 const ROUND_LIMIT = 10;
 
@@ -114,6 +114,7 @@ export async function finalizeLeaderboardRound(
       await tx.insert(walletTransactions).values({
         telegramId: entry.telegramId,
         type: "leaderboard_payout",
+        wallet: "win",
         amount,
         balanceBefore,
         balanceAfter,
@@ -121,7 +122,7 @@ export async function finalizeLeaderboardRound(
         reference: `leaderboard:${session.id}:${entry.telegramId}`,
         metadata: { sessionId: session.id, rank, payoutId: payout.id },
       });
-      winners.push({ telegramId: entry.telegramId, name: [user.firstName, user.lastName].filter(Boolean).join(" "), rank, amount, chatId: user.chatId });
+      winners.push({ telegramId: entry.telegramId, name: [user.firstName, user.lastName].filter(Boolean).join(" "), rank, score: entry.score, amount, chatId: user.chatId });
     }
     await tx.update(leaderboardSessions).set({ status: "completed", completedAt: new Date() }).where(eq(leaderboardSessions.id, session.id));
   } else {

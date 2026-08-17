@@ -51,6 +51,7 @@ const TOTAL_NUMBERS = 500;
 const STAKE = 10;
 const START_COUNTDOWN = 60;
 const WINNER_DISPLAY_DURATION = 8000;
+const BONUS_RESET_HOURS = 36;
 const GAME_ID = '#86195';
 const CALL_INTERVAL = 2500;
 const ballAudioSources: Record<number, string> = {
@@ -138,6 +139,8 @@ type Profile = {
   firstName?: string;
   lastName?: string | null;
   playWalletBalance?: string;
+  bonusWalletBalance?: string;
+  bonusWalletLastPlayedAt?: string | null;
   winWalletBalance?: string;
   isAdmin?: boolean;
 };
@@ -341,7 +344,7 @@ function NumberGrid({ selected, taken, onToggle, canSelect, maxCards }: { select
           const isSelected = selected.has(number);
           const isTaken = taken.has(number);
           return (
-            <button type="button" key={number} data-testid={`button-card-${number}`} disabled={!canSelect || (isTaken && !isSelected)} onClick={() => onToggle(number)} className={`depth-action relative aspect-square rounded-xl border text-xs font-bold transition-all duration-150 active:scale-90 ${isSelected ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-[0_4px_0_hsl(128_65%_30%)] -translate-y-0.5' : isTaken ? 'border-[hsl(136_58%_25%/.25)] bg-[hsl(136_45%_13%/.35)] text-[hsl(var(--muted-foreground)/.35)]' : 'border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] text-[hsl(var(--foreground)/.78)] hover:border-[hsl(var(--primary)/.7)] hover:bg-[hsl(var(--primary)/.1)]'}`}>
+            <button type="button" key={number} data-testid={`button-card-${number}`} disabled={!canSelect || (isTaken && !isSelected)} onClick={() => onToggle(number)} className={`depth-action relative aspect-square rounded-xl border text-xs font-bold transition-all duration-150 active:scale-90 ${isSelected ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-[0_4px_0_hsl(128_65%_30%)] -translate-y-0.5' : isTaken ? 'border-slate-400 bg-slate-500 text-white shadow-inner' : 'border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] text-[hsl(var(--foreground)/.78)] hover:border-[hsl(var(--primary)/.7)] hover:bg-[hsl(var(--primary)/.1)]'}`}>
               {number}
               {isTaken && <span className="absolute inset-x-1.5 bottom-1 h-px rotate-[-28deg] bg-[hsl(var(--destructive)/.55)]" />}
               {isSelected && <span className="absolute right-1 top-0.5 text-[9px]">✓</span>}
@@ -355,9 +358,30 @@ function NumberGrid({ selected, taken, onToggle, canSelect, maxCards }: { select
 
 function WalletPanel() {
   const { profile } = useTelegramBridge();
+  const [resetSeconds, setResetSeconds] = useState(0);
+  useEffect(() => {
+    const updateResetCountdown = () => {
+      const lastPlayedAt = profile?.bonusWalletLastPlayedAt;
+      if (!lastPlayedAt) {
+        setResetSeconds(0);
+        return;
+      }
+      setResetSeconds(Math.max(0, Math.ceil((new Date(lastPlayedAt).getTime() + BONUS_RESET_HOURS * 60 * 60 * 1000 - Date.now()) / 1000)));
+    };
+    updateResetCountdown();
+    const timer = window.setInterval(updateResetCountdown, 1000);
+    return () => window.clearInterval(timer);
+  }, [profile?.bonusWalletLastPlayedAt]);
+  const formatResetCountdown = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+    return `${hours}ሰ ${minutes.toString().padStart(2, '0')}ደ ${remainingSeconds.toString().padStart(2, '0')}ሰከ`;
+  };
   const [walletAction, setWalletAction] = useState<'deposit' | 'withdrawal' | null>(null);
   const [walletError, setWalletError] = useState('');
   const playWallet = profile?.playWalletBalance ?? '—';
+  const bonusWallet = profile?.bonusWalletBalance ?? '—';
   const winWallet = profile?.winWalletBalance ?? '—';
 
   const startWalletFlow = async (action: 'deposit' | 'withdrawal') => {
@@ -392,6 +416,11 @@ function WalletPanel() {
             <div className="text-lg font-extrabold leading-tight">🏆 WIN<br />WALLET</div>
             <div data-testid="text-win-wallet-balance" className="mt-3 font-mono text-2xl font-bold">{winWallet}</div>
           </div>
+        </div>
+        <div className="mt-4 rounded-2xl border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] px-4 py-3 text-center">
+          <div className="text-xs font-bold text-[hsl(var(--accent))]">🎁 BONUS WALLET</div>
+          <div data-testid="text-bonus-wallet-balance" className="mt-1 font-mono text-xl font-bold text-[hsl(var(--accent))]">{bonusWallet}</div>
+          <div data-testid="text-bonus-reset-countdown" className="mt-1 text-[11px] font-bold text-[hsl(var(--foreground)/.75)]">{resetSeconds > 0 ? `ሪሴት በ ${formatResetCountdown(resetSeconds)} ውስጥ` : 'ሪሴት ለመጀመር በቅርቡ'}</div>
         </div>
       </section>
       <div className="mt-6 grid grid-cols-2 gap-5">
@@ -473,6 +502,7 @@ type RoundData = {
   takenCardNumbers: number[];
   pot: string;
   maxCardsPerPlayer?: number;
+  uniquePlayers?: number;
   winner?: { telegramId?: number; name?: string; cardNumber: number; payout: string; status: string };
   winners?: Array<{ telegramId?: number; name?: string; cardNumber: number; payout: string; status: string }>;
 };
@@ -542,8 +572,7 @@ function Home() {
       setRoundError(message);
     };
     void loadRound().catch(reportRoundError);
-    const timer = window.setInterval(() => { void loadRound().catch(reportRoundError); }, 3000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    return () => { cancelled = true; };
   }, []);
   const roundIdRef = useRef<number | null>(null);
   const purchaseStartedRef = useRef(false);
@@ -574,6 +603,7 @@ function Home() {
         selectionEndsAt: state.selectionEndsAt ?? null,
         calls: (state.calledBalls ?? []).map((number, position) => ({ number, position, calledAt: new Date().toISOString() })),
         takenCardNumbers: state.cardsTaken ?? current?.takenCardNumbers ?? [],
+        uniquePlayers: current?.uniquePlayers,
         pot: String(state.netPrizePool ?? current?.pot ?? 0),
         winner: state.winner,
       }));
@@ -665,7 +695,7 @@ function Home() {
     }).finally(() => pendingCardsRef.current.delete(number));
   };
   const selectedCards = [...selected].sort((a, b) => a - b);
-  const canSelect = round?.status === 'selecting' && countdown > 0;
+  const canSelect = round?.status === 'selecting' && countdown > 5;
   const selectionStarting = round?.status === 'selecting' && countdown === 0;
   useEffect(() => {
     if (round?.status === 'playing' && selectedRef.current.size > 0) {
@@ -679,6 +709,8 @@ function Home() {
         <Stats play={totalBalance} pot={Number(round?.pot ?? '0')} cardsTaken={taken.size} win={walletBalances.win} />
         <SoundCountdown muted={muted} onToggle={() => setMuted((value) => !value)} countdown={countdown} status={round?.status ?? 'loading'} />
         {roundError && <div role="alert" data-testid="status-round-error" className="mx-3 mt-3 rounded-xl border border-[hsl(var(--destructive)/.55)] bg-[hsl(var(--destructive)/.1)] px-3 py-2 text-center text-xs font-bold text-[hsl(var(--destructive))]">{roundError}</div>}
+        {round?.status === 'selecting' && (round.uniquePlayers ?? 0) < 2 && <div role="status" data-testid="status-waiting-for-player" className="mx-3 mt-3 rounded-2xl border border-[hsl(var(--primary)/.65)] bg-[hsl(var(--primary)/.12)] px-4 py-3 text-center shadow-[0_0_20px_hsl(var(--primary)/.12)]"><p className="text-sm font-extrabold text-[hsl(var(--primary))]">⏳ ሁለተኛ ተጫዋች እየተጠበቀ ነው</p><p className="mt-1 text-xs font-bold text-[hsl(var(--foreground)/.8)]">ቢያንስ 2 የተለያዩ ተጫዋቾች ሲኖሩ ጨዋታው ይጀምራል። የካርድ ምርጫ ይቀጥላል።</p></div>}
+        {round?.status === 'selecting' && countdown > 0 && countdown <= 5 && <div role="status" data-testid="status-card-lock" className="mx-3 mt-3 rounded-2xl border border-[hsl(var(--accent)/.75)] bg-[linear-gradient(135deg,hsl(var(--accent)/.18),hsl(var(--primary)/.12))] px-4 py-3 text-center shadow-[0_0_22px_hsl(var(--accent)/.18)] animate-pulse"><p className="text-sm font-extrabold text-[hsl(var(--accent))]">🔒 ካርድ መያዣ ሊቆለፍ ነው!</p><p className="mt-1 text-xs font-bold text-[hsl(var(--foreground)/.8)]">{countdown} ሰከንድ ቀርቷል — ካርድዎን አሁኑኑ ይምረጡ</p></div>}
         {selectionStarting && <div role="status" data-testid="status-round-transition" className="mx-3 mt-3 rounded-xl border border-[hsl(var(--primary)/.55)] bg-[hsl(var(--primary)/.1)] px-3 py-2 text-center text-xs font-bold text-[hsl(var(--primary))]">ጨዋታው እየተጀመረ ነው፤ እባክዎ ይጠብቁ</div>}
         <div className="relative min-h-0 flex-1 overflow-y-auto"><NumberGrid selected={selected} taken={taken} onToggle={toggle} canSelect={canSelect} maxCards={maxCards} />{round?.status === 'playing' && selectedCards.length === 0 && <div role="status" data-testid="status-game-in-progress" className="absolute inset-0 z-10 grid place-items-center bg-[hsl(156_70%_5%/.82)] px-6 text-center backdrop-blur-sm"><div className="rounded-2xl border border-[hsl(var(--primary)/.55)] bg-[hsl(156_48%_10%)] px-5 py-4 text-sm font-extrabold text-[hsl(var(--primary))] shadow-xl">GAME IN PROGRESS<br /><span className="mt-1 block text-xs font-medium text-[hsl(var(--foreground)/.72)]">wait for next round</span></div></div>}</div>
         {selectedCards.length > 0 && <div className="absolute bottom-[74px] left-0 right-0 z-10 flex gap-2 overflow-x-auto overflow-y-hidden bg-gradient-to-t from-[hsl(156_70%_5%)] to-transparent px-3 pb-2 pt-8">{selectedCards.map((id) => <MiniCard key={id} id={id} grid={buildCard(id)} />)}</div>}
@@ -1122,6 +1154,8 @@ type AdminUser = { telegramId: number; chatId: number; firstName: string; lastNa
 type AdminGameSettings = {
   registrationBonus: string;
   inviteBonus: string;
+  supportUsername: string;
+  depositBonusPercentage: string;
   mainPrizePercentage: string;
   leaderboardPoolPercentage: string;
   leaderboardFirstPercentage: string;
@@ -1154,6 +1188,9 @@ function AdminPanel() {
   const [broadcastPhoto, setBroadcastPhoto] = useState<File | null>(null);
   const [broadcastCaption, setBroadcastCaption] = useState('');
   const [broadcastResult, setBroadcastResult] = useState('');
+  const [adjustmentWallet, setAdjustmentWallet] = useState<'play' | 'win'>('play');
+  const [adjustmentAmount, setAdjustmentAmount] = useState('');
+  const [adjustmentReason, setAdjustmentReason] = useState('');
 
   const loadRequests = async () => {
     setError('');
@@ -1242,6 +1279,22 @@ function AdminPanel() {
     } finally {
       setActionKey('');
     }
+  };
+
+  const adjustBalance = async () => {
+    if (!selectedUser || !adjustmentAmount.trim() || !adjustmentReason.trim()) return;
+    setActionKey('balance-adjustment');
+    setError('');
+    try {
+      const response = await fetch(`${getApiUrl()}/api/telegram/admin/users/${selectedUser.telegramId}/balance-adjustment`, { method: 'POST', headers: { 'content-type': 'application/json', ...telegramHeaders() }, body: JSON.stringify({ wallet: adjustmentWallet, amount: adjustmentAmount, reason: adjustmentReason }) });
+      const data = await response.json() as { error?: string; after?: string };
+      if (!response.ok) throw new Error(data.error ?? 'ባላንሱን ማስተካከል አልተቻለም።');
+      setAdjustmentAmount('');
+      setAdjustmentReason('');
+      await loadRequests();
+    } catch (adjustmentError) {
+      setError(adjustmentError instanceof Error ? adjustmentError.message : 'ባላንሱን ማስተካከል አልተቻለም።');
+    } finally { setActionKey(''); }
   };
 
   const updateSetting = (field: keyof AdminGameSettings, value: string) => {
@@ -1338,6 +1391,37 @@ function AdminPanel() {
     }
   };
 
+  const downloadPendingWithdrawals = () => {
+    if (!requests) return;
+    const generatedAt = new Date();
+    const lines = [
+      'VENOM BINGO — PENDING WITHDRAWALS',
+      '===================================',
+      `Generated: ${generatedAt.toLocaleString()}`,
+      `Total requests: ${requests.withdrawals.length}`,
+      `Total amount: ${requests.withdrawals.reduce((total, request) => total + Number(request.amount), 0).toFixed(2)} ETB`,
+      '',
+      ...requests.withdrawals.map((request, index) => [
+        `${index + 1}. WITHDRAWAL #${request.id}`,
+        `   Amount: ${request.amount} ETB`,
+        `   Telegram ID: ${request.telegramId}`,
+        `   Wallet: ${request.walletType === 'agent' ? 'Agent Wallet' : 'Win Wallet'}`,
+        `   Telebirr: ${request.phone ?? '—'}`,
+        `   Owner: ${request.ownerName ?? '—'}`,
+        `   Requested: ${new Date(request.createdAt).toLocaleString()}`,
+        '   Status: PENDING',
+        '',
+      ].join('\\n')),
+    ].join('\\n');
+    const blob = new Blob([`\\ufeff${lines}`], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `venom-pending-withdrawals-${generatedAt.toISOString().slice(0, 10)}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const renderRequest = (request: AdminRequest, type: AdminRequestType) => {
     const actionKeyForRequest = `${type}-${request.id}`;
     return <article key={actionKeyForRequest} className="depth-card rounded-2xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] p-4">
@@ -1393,8 +1477,9 @@ function AdminPanel() {
             <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[hsl(var(--accent))]">GAME SETTINGS</p>
             <h2 className="mt-1 text-sm font-extrabold">የቦነስ፣ ፕራይዝ እና ጨዋታ ቅንብሮች</h2>
           </div>
+          <label className="mb-3 block text-xs font-bold text-[hsl(var(--foreground)/.85)]"><span>የSupport Team username</span><input type="text" value={gameSettings.supportUsername} onChange={(event) => updateSetting('supportUsername', event.target.value)} placeholder="@SupportUsername" className="mt-1 w-full rounded-xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] px-3 py-2.5 font-mono text-sm font-bold text-[hsl(var(--foreground))] outline-none" /></label>
           <div className="grid grid-cols-2 gap-3">
-            {[['registrationBonus', 'የሬጂስተር ቦነስ', 'ETB', '0', '100000', '0.01'], ['inviteBonus', 'የኢንቫይት ቦነስ', 'ETB', '0', '100000', '0.01'], ['mainPrizePercentage', 'ዋና ጨዋታ ፕራይዝ', '%', '0', '100', '0.01'], ['leaderboardPoolPercentage', 'ሊደርቦርድ ፕራይዝ ፑል', '%', '0', '100', '0.01'], ['leaderboardFirstPercentage', 'ሊደርቦርድ 1ኛ', '%', '0', '100', '0.01'], ['leaderboardSecondPercentage', 'ሊደርቦርድ 2ኛ', '%', '0', '100', '0.01'], ['leaderboardThirdPercentage', 'ሊደርቦርድ 3ኛ', '%', '0', '100', '0.01'], ['maxCardsPerPlayer', 'ከፍተኛ የካርድ መያዣ', 'ካርድ', '1', '500', '1'], ['leaderboardCardPurchasePoints', 'ካርድ ሲገዛ ነጥብ', 'ነጥብ', '-100', '100', '1'], ['leaderboardCardReleasePoints', 'ካርድ ሲለቀቅ ነጥብ', 'ነጥብ', '-100', '100', '1'], ['leaderboardWinPoints', 'ቢንጎ ሲያሸንፍ ነጥብ', 'ነጥብ', '-100', '100', '1']].map(([field, label, suffix, min, max, step]) => <label key={field} className="block text-xs font-bold text-[hsl(var(--foreground)/.85)]">
+            {[['registrationBonus', 'የሬጂስተር ቦነስ', 'ETB', '0', '100000', '0.01'], ['inviteBonus', 'የኢንቫይት ቦነስ', 'ETB', '0', '100000', '0.01'], ['depositBonusPercentage', 'የዲፖዚት ቦነስ', '%', '0', '100', '0.01'], ['mainPrizePercentage', 'ዋና ጨዋታ ፕራይዝ', '%', '0', '100', '0.01'], ['leaderboardPoolPercentage', 'ሊደርቦርድ ፕራይዝ ፑል', '%', '0', '100', '0.01'], ['leaderboardFirstPercentage', 'ሊደርቦርድ 1ኛ', '%', '0', '100', '0.01'], ['leaderboardSecondPercentage', 'ሊደርቦርድ 2ኛ', '%', '0', '100', '0.01'], ['leaderboardThirdPercentage', 'ሊደርቦርድ 3ኛ', '%', '0', '100', '0.01'], ['maxCardsPerPlayer', 'ከፍተኛ የካርድ መያዣ', 'ካርድ', '1', '500', '1'], ['leaderboardCardPurchasePoints', 'ካርድ ሲገዛ ነጥብ', 'ነጥብ', '-100', '100', '1'], ['leaderboardCardReleasePoints', 'ካርድ ሲለቀቅ ነጥብ', 'ነጥብ', '-100', '100', '1'], ['leaderboardWinPoints', 'ቢንጎ ሲያሸንፍ ነጥብ', 'ነጥብ', '-100', '100', '1']].map(([field, label, suffix, min, max, step]) => <label key={field} className="block text-xs font-bold text-[hsl(var(--foreground)/.85)]">
               <span>{label}</span>
               <div className="mt-1 flex items-center rounded-xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] px-3">
                 <input type="number" min={min} max={max} step={step} value={gameSettings[field as keyof AdminGameSettings]} onChange={(event) => updateSetting(field as keyof AdminGameSettings, event.target.value)} className="w-full bg-transparent py-2.5 font-mono text-sm font-bold text-[hsl(var(--foreground))] outline-none" />
@@ -1451,7 +1536,7 @@ function AdminPanel() {
           <div className="space-y-3">{requests.deposits.length ? requests.deposits.map((request) => renderRequest(request, 'deposit')) : <p className="depth-surface rounded-2xl p-4 text-xs text-[hsl(var(--muted-foreground))]">ምንም የሚጠባበቅ ዲፖዚት የለም።</p>}</div>
         </section>
         <section>
-          <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-extrabold tracking-[.08em]">💸 WITHDRAWALS</h2><span className="rounded-full bg-[hsl(var(--primary)/.15)] px-2 py-1 text-xs font-bold text-[hsl(var(--primary))]">{requests.withdrawals.length}</span></div>
+          <div className="mb-3 flex items-center justify-between gap-2"><h2 className="text-sm font-extrabold tracking-[.08em]">💸 WITHDRAWALS</h2><div className="flex items-center gap-2"><span className="rounded-full bg-[hsl(var(--primary)/.15)] px-2 py-1 text-xs font-bold text-[hsl(var(--primary))]">{requests.withdrawals.length}</span><button type="button" data-testid="button-download-pending-withdrawals" onClick={downloadPendingWithdrawals} className="rounded-lg border border-[hsl(var(--accent)/.5)] bg-[hsl(var(--accent)/.12)] px-2 py-1 text-[10px] font-extrabold text-[hsl(var(--accent))] disabled:cursor-not-allowed disabled:opacity-40">TXT ላክ</button></div></div>
           <div className="space-y-3">{requests.withdrawals.length ? requests.withdrawals.map((request) => renderRequest(request, 'withdrawal')) : <p className="depth-surface rounded-2xl p-4 text-xs text-[hsl(var(--muted-foreground))]">ምንም የሚጠባበቅ ዊዝድሮ የለም።</p>}</div>
         </section>
         </div>
@@ -1461,9 +1546,9 @@ function AdminPanel() {
             <div className="mb-4 flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.12em] text-[hsl(var(--primary))]">USER DETAILS</p><h2 className="mt-1 text-xl font-extrabold">{selectedUser.firstName} {selectedUser.lastName ?? ''}</h2></div><button type="button" onClick={() => setSelectedUser(null)} className="rounded-lg px-2 py-1 text-xs font-bold text-[hsl(var(--muted-foreground))]">CLOSE</button></div>
             <div className="grid grid-cols-2 gap-3 text-xs"><div><p className="text-[hsl(var(--muted-foreground))]">Telegram ID</p><p className="mt-1 font-mono font-bold">{selectedUser.telegramId}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Chat ID</p><p className="mt-1 font-mono font-bold">{selectedUser.chatId}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Username</p><p className="mt-1 font-bold">{selectedUser.username ? `@${selectedUser.username}` : '—'}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Phone</p><p className="mt-1 font-mono font-bold">{selectedUser.phoneNumber}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Play Wallet</p><p className="mt-1 font-mono text-lg font-extrabold text-[hsl(var(--accent))]">{selectedUser.playWalletBalance} ETB</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Win Wallet</p><p className="mt-1 font-mono text-lg font-extrabold text-[hsl(var(--primary))]">{selectedUser.winWalletBalance} ETB</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Language</p><p className="mt-1 font-bold">{selectedUser.languageCode ?? '—'}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Registered</p><p className="mt-1 font-bold">{new Date(selectedUser.createdAt).toLocaleString()}</p></div></div>
             <div className="mt-4 rounded-xl border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] p-3"><p className="text-[10px] font-bold uppercase tracking-[.12em] text-[hsl(var(--accent))]">GAME STATUS</p><div className="mt-2 grid grid-cols-2 gap-3 text-xs"><div><p className="text-[hsl(var(--muted-foreground))]">Current game</p><p className="mt-1 font-extrabold uppercase text-[hsl(var(--accent))]">{selectedUser.gameStatus}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Round</p><p className="mt-1 font-mono font-bold">{selectedUser.activeRoundId ?? '—'}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Cards in round</p><p className="mt-1 font-mono font-bold">{selectedUser.activeRoundCards.length ? selectedUser.activeRoundCards.join(', ') : 'None'}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Last card selected</p><p className="mt-1 font-bold">{selectedUser.lastCardSelectedAt ? new Date(selectedUser.lastCardSelectedAt).toLocaleString() : '—'}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Balls called</p><p className="mt-1 font-mono font-bold">{selectedUser.calledBalls.length}</p></div><div><p className="text-[hsl(var(--muted-foreground))]">Round started</p><p className="mt-1 font-bold">{selectedUser.activeRoundStartedAt ? new Date(selectedUser.activeRoundStartedAt).toLocaleString() : '—'}</p></div></div></div>
-            <p className="mt-3 text-[11px] text-[hsl(var(--muted-foreground))]">Last updated: {new Date(selectedUser.updatedAt).toLocaleString()}</p>
+            <section className="mt-4 rounded-xl border border-[hsl(var(--primary)/.35)] bg-[hsl(var(--primary)/.08)] p-3"><p className="text-[10px] font-bold uppercase tracking-[.12em] text-[hsl(var(--primary))]">ADMIN BALANCE ADJUSTMENT</p><div className="mt-2 grid grid-cols-2 gap-2"><select value={adjustmentWallet} onChange={(event) => setAdjustmentWallet(event.target.value as 'play' | 'win')} className="rounded-xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] px-3 py-2 text-xs font-bold text-[hsl(var(--foreground))]"><option value="play">Play Wallet</option><option value="win">Win Wallet</option></select><input type="number" step="0.01" value={adjustmentAmount} onChange={(event) => setAdjustmentAmount(event.target.value)} placeholder="+ / - Amount" className="rounded-xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] px-3 py-2 text-xs font-bold text-[hsl(var(--foreground))]" /></div><input value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} placeholder="Reason" className="mt-2 w-full rounded-xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] px-3 py-2 text-xs font-bold text-[hsl(var(--foreground))]" /><button type="button" disabled={actionKey === 'balance-adjustment' || !adjustmentAmount || !adjustmentReason} onClick={() => void adjustBalance()} className="mt-2 w-full rounded-xl bg-[hsl(var(--primary))] px-3 py-2 text-xs font-extrabold text-[hsl(var(--primary-foreground))] disabled:opacity-50">{actionKey === 'balance-adjustment' ? 'በማስተካከል ላይ...' : 'ባላንስ አስተካክል'}</button></section><p className="mt-3 text-[11px] text-[hsl(var(--muted-foreground))]">Last updated: {new Date(selectedUser.updatedAt).toLocaleString()}</p>
           </article>}
-          <div className="space-y-2">{users.filter((user) => `${user.firstName} ${user.lastName ?? ''} ${user.username ?? ''} ${user.phoneNumber} ${user.telegramId}`.toLowerCase().includes(userSearch.toLowerCase())).map((user) => <button type="button" key={user.telegramId} onClick={() => setSelectedUser(user)} className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] p-4 text-left transition-colors hover:border-[hsl(var(--primary)/.5)]"><span className="min-w-0"><span className="block truncate text-sm font-extrabold">{user.firstName} {user.lastName ?? ''}</span><span className="mt-1 block truncate text-xs text-[hsl(var(--muted-foreground))]">{user.username ? `@${user.username}` : user.phoneNumber} · {user.gameStatus}</span></span><span className="shrink-0 text-right"><span className="block font-mono text-sm font-bold text-[hsl(var(--accent))]">{user.playWalletBalance} ETB</span><span className="block text-[10px] text-[hsl(var(--muted-foreground))]">View details →</span></span></button>)}{users.length === 0 && <p className="rounded-2xl p-4 text-xs text-[hsl(var(--muted-foreground))]">ምንም user አልተገኘም።</p>}</div>
+          <div className="space-y-2">{users.filter((user) => `${user.firstName} ${user.lastName ?? ''} ${user.username ?? ''} ${user.phoneNumber} ${user.telegramId}`.toLowerCase().includes(userSearch.toLowerCase())).sort((left, right) => Number(right.playWalletBalance) + Number(right.winWalletBalance) - Number(left.playWalletBalance) - Number(left.winWalletBalance)).map((user) => <button type="button" key={user.telegramId} onClick={() => setSelectedUser(user)} className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] p-4 text-left transition-colors hover:border-[hsl(var(--primary)/.5)]"><span className="min-w-0"><span className="block truncate text-sm font-extrabold">{user.firstName} {user.lastName ?? ''}</span><span className="mt-1 block truncate text-xs text-[hsl(var(--muted-foreground))]">{user.username ? `@${user.username}` : user.phoneNumber} · {user.gameStatus}</span></span><span className="shrink-0 text-right"><span className="block font-mono text-sm font-bold text-[hsl(var(--accent))]">Play: {user.playWalletBalance} ETB</span><span className="block font-mono text-sm font-bold text-[hsl(var(--primary))]">Win: {user.winWalletBalance} ETB</span><span className="block text-[10px] text-[hsl(var(--muted-foreground))]">View details →</span></span></button>)}{users.length === 0 && <p className="rounded-2xl p-4 text-xs text-[hsl(var(--muted-foreground))]">ምንም user አልተገኘም።</p>}</div>
         </section>}
       </div>}
     </div>

@@ -8,6 +8,9 @@ export const telegramUsers = pgTable("telegram_users", {
   username: text("username"),
   phoneNumber: text("phone_number").notNull(),
   playWalletBalance: numeric("play_wallet_balance", { precision: 12, scale: 2 }).notNull().default("0"),
+  // Bonus funds are kept separate from deposited/play funds and expire after inactivity.
+  bonusWalletBalance: numeric("bonus_wallet_balance", { precision: 12, scale: 2 }).notNull().default("0"),
+  bonusWalletLastPlayedAt: timestamp("bonus_wallet_last_played_at", { withTimezone: true }),
   winWalletBalance: numeric("win_wallet_balance", { precision: 12, scale: 2 }).notNull().default("0"),
   agentWalletBalance: numeric("agent_wallet_balance", { precision: 12, scale: 2 }).notNull().default("0"),
   languageCode: text("language_code"),

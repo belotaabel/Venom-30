@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 export type EditableGameSettings = {
   registrationBonus: string;
   inviteBonus: string;
+  supportUsername: string;
+  depositBonusPercentage: string;
   mainPrizePercentage: string;
   leaderboardPoolPercentage: string;
   leaderboardFirstPercentage: string;
