@@ -33,7 +33,7 @@ export const walletForTransactionType = {
 } as const;
 
 export const BONUS_WALLET_RESET_HOURS = 36;
-export const BONUS_WALLET_RESET_BALANCE = "10.00";
+export const BONUS_WALLET_RESET_BALANCE = "0.00";
 
 export const walletTransactions = pgTable("wallet_transactions", {
   id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
