@@ -255,17 +255,22 @@ export async function advanceBingoRound() {
     const nextStatus = await db.transaction(async (tx) => {
       const [lockedRound] = await tx.select().from(bingoRounds).where(eq(bingoRounds.id, round.id)).for("update").limit(1);
       if (!lockedRound || lockedRound.status !== "selecting" || !lockedRound.selectionEndsAt || lockedRound.selectionEndsAt.getTime() > Date.now()) return lockedRound?.status;
-      const cards = await tx.select({ id: bingoPlayerCards.id }).from(bingoPlayerCards).where(eq(bingoPlayerCards.roundId, round.id)).limit(1);
-      if (cards.length < 1) {
+      const cards = await tx.select({ telegramId: bingoPlayerCards.telegramId }).from(bingoPlayerCards).where(eq(bingoPlayerCards.roundId, round.id));
+      const uniquePlayers = new Set(cards.map((card) => card.telegramId));
+      if (uniquePlayers.size === 0) {
         await tx.update(bingoRounds).set({ status: "completed", completedAt: new Date() }).where(eq(bingoRounds.id, round.id));
         return "completed";
+      }
+      if (uniquePlayers.size < 2) {
+        await tx.update(bingoRounds).set({ selectionEndsAt: new Date(Date.now() + SELECTION_DURATION_MS) }).where(eq(bingoRounds.id, round.id));
+        return "selecting";
       }
       await tx.update(bingoRounds).set({ status: "playing", startedAt: new Date(), selectionEndsAt: null }).where(eq(bingoRounds.id, round.id));
       return "playing";
     });
-    logger.info({ roundId: round.id, cardCount: nextStatus === "playing" ? 1 : 0, nextStatus }, "Bingo selection round transitioned");
+    logger.info({ roundId: round.id, uniquePlayers: nextStatus === "playing" ? 2 : undefined, nextStatus }, "Bingo selection round transitioned");
     if (nextStatus === "completed") return ensureActiveBingoRound();
-    round = { ...round, status: "playing" };
+    if (nextStatus === "playing") round = { ...round, status: "playing" };
   }
   if (round.status === "selecting") return round;
   const cards = await db.select({ id: bingoPlayerCards.id, telegramId: bingoPlayerCards.telegramId }).from(bingoPlayerCards).where(eq(bingoPlayerCards.roundId, round.id));
