@@ -3,13 +3,21 @@ import { db, telegramUsers, BONUS_WALLET_RESET_BALANCE, BONUS_WALLET_RESET_HOURS
 
 type WalletTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-export function splitCardStake(bonusBalance: string | number, playBalance: string | number, stake: number) {
+export function splitCardStake(
+  bonusBalance: string | number,
+  playBalance: string | number,
+  winBalance: string | number,
+  stake: number,
+) {
   const bonus = Math.max(0, Number(bonusBalance));
   const play = Math.max(0, Number(playBalance));
+  const win = Math.max(0, Number(winBalance));
   const fromBonus = Math.min(bonus, stake);
-  const fromPlay = stake - fromBonus;
-  if (fromPlay > play) return undefined;
-  return { fromBonus, fromPlay };
+  const remainingAfterBonus = stake - fromBonus;
+  const fromPlay = Math.min(play, remainingAfterBonus);
+  const fromWin = remainingAfterBonus - fromPlay;
+  if (fromWin > win) return undefined;
+  return { fromBonus, fromPlay, fromWin };
 }
 
 /** Resets only expired bonus funds; cash/play and win balances are untouched. */

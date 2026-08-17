@@ -346,15 +346,16 @@ router.post("/bingo/cards/reserve", async (req, res) => {
       if (existingCard) throw Object.assign(new Error("This card is already taken"), { status: 409 });
       const currentCards = await tx.select({ id: bingoPlayerCards.id }).from(bingoPlayerCards).where(and(eq(bingoPlayerCards.roundId, lockedRound.id), eq(bingoPlayerCards.telegramId, user.telegramId))).for("update");
       if (currentCards.length >= maxCardsPerPlayer) throw Object.assign(new Error(`You can select at most ${maxCardsPerPlayer} cards`), { status: 400 });
-      const split = splitCardStake(lockedUser.bonusWalletBalance, lockedUser.playWalletBalance, CARD_STAKE);
-      if (!split) throw Object.assign(new Error("Insufficient balance in bonus and play wallets"), { status: 402 });
+      const split = splitCardStake(lockedUser.bonusWalletBalance, lockedUser.playWalletBalance, lockedUser.winWalletBalance, CARD_STAKE);
+      if (!split) throw Object.assign(new Error("Insufficient balance in bonus, play, and win wallets"), { status: 402 });
       const bonusAfter = (Number(lockedUser.bonusWalletBalance) - split.fromBonus).toFixed(2);
       const playAfter = (Number(lockedUser.playWalletBalance) - split.fromPlay).toFixed(2);
+      const winAfter = (Number(lockedUser.winWalletBalance) - split.fromWin).toFixed(2);
       await tx.insert(bingoPlayerCards).values({ roundId: lockedRound.id, telegramId: user.telegramId, cardNumber, grid: buildCard(cardNumber) });
-      await tx.update(telegramUsers).set({ bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, bonusWalletLastPlayedAt: new Date(), updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
-      await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", wallet: split.fromBonus > 0 ? "bonus" : "cash_play", amount: (-CARD_STAKE).toFixed(2), balanceBefore: CARD_STAKE.toFixed(2), balanceAfter: "0.00", status: "completed", reference, metadata: { roundId: lockedRound.id, cardNumber, stake: CARD_STAKE, bonusAmount: split.fromBonus, playAmount: split.fromPlay } });
+      await tx.update(telegramUsers).set({ bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter, bonusWalletLastPlayedAt: new Date(), updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
+      await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", wallet: split.fromBonus > 0 ? "bonus" : split.fromPlay > 0 ? "cash_play" : "win", amount: (-CARD_STAKE).toFixed(2), balanceBefore: CARD_STAKE.toFixed(2), balanceAfter: "0.00", status: "completed", reference, metadata: { roundId: lockedRound.id, cardNumber, stake: CARD_STAKE, bonusAmount: split.fromBonus, playAmount: split.fromPlay, winAmount: split.fromWin } });
       await recordLeaderboardScore(tx, lockedRound.id, user.telegramId, "card_purchase", Number(settings.leaderboardCardPurchasePoints), `leaderboard:purchase:${lockedRound.id}:${user.telegramId}:${cardNumber}`);
-      return { reserved: true, scoreDelta: Number(settings.leaderboardCardPurchasePoints), wallet: split.fromBonus > 0 ? "bonus" : "play", bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: lockedUser.winWalletBalance };
+      return { reserved: true, scoreDelta: Number(settings.leaderboardCardPurchasePoints), wallet: split.fromBonus > 0 ? "bonus" : split.fromPlay > 0 ? "play" : "win", bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter };
     });
     logger.info({ roundId: round.id, telegramId: user.telegramId, cardNumber, wallet: result.wallet }, "Bingo card reserved");
     await publishBingoRoundUpdate();
@@ -383,16 +384,18 @@ router.post("/bingo/cards/release", async (req, res) => {
       if (!card) return { released: false, scoreDelta: 0 };
       const reference = `bingo_reservation:${lockedRound.id}:${user.telegramId}:${cardNumber}`;
       const [ledger] = await tx.select().from(walletTransactions).where(eq(walletTransactions.reference, reference)).limit(1);
-      const metadata = ledger?.metadata as { bonusAmount?: number; playAmount?: number } | null;
+      const metadata = ledger?.metadata as { bonusAmount?: number; playAmount?: number; winAmount?: number } | null;
       const bonusAmount = Number(metadata?.bonusAmount ?? 0);
-      const playAmount = Number(metadata?.playAmount ?? CARD_STAKE);
+      const playAmount = Number(metadata?.playAmount ?? 0);
+      const winAmount = Number(metadata?.winAmount ?? 0);
       const bonusAfter = (Number(lockedUser.bonusWalletBalance) + bonusAmount).toFixed(2);
       const playAfter = (Number(lockedUser.playWalletBalance) + playAmount).toFixed(2);
+      const winAfter = (Number(lockedUser.winWalletBalance) + winAmount).toFixed(2);
       await tx.delete(bingoPlayerCards).where(eq(bingoPlayerCards.id, card.id));
-      await tx.update(telegramUsers).set({ bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
-      await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", wallet: bonusAmount > 0 ? "bonus" : "cash_play", amount: CARD_STAKE.toFixed(2), balanceBefore: "0.00", balanceAfter: CARD_STAKE.toFixed(2), status: "completed", reference: `bingo_release:${lockedRound.id}:${user.telegramId}:${cardNumber}`, metadata: { roundId: lockedRound.id, cardNumber, stake: CARD_STAKE, bonusAmount, playAmount, source: reference } });
+      await tx.update(telegramUsers).set({ bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter, updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
+      await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", wallet: bonusAmount > 0 ? "bonus" : "cash_play", amount: CARD_STAKE.toFixed(2), balanceBefore: "0.00", balanceAfter: CARD_STAKE.toFixed(2), status: "completed", reference: `bingo_release:${lockedRound.id}:${user.telegramId}:${cardNumber}`, metadata: { roundId: lockedRound.id, cardNumber, stake: CARD_STAKE, bonusAmount, playAmount, winAmount, source: reference } });
       await recordLeaderboardScore(tx, lockedRound.id, user.telegramId, "card_release", Number(settings.leaderboardCardReleasePoints), `leaderboard:release:${lockedRound.id}:${user.telegramId}:${cardNumber}`);
-      return { released: true, scoreDelta: Number(settings.leaderboardCardReleasePoints), wallet: bonusAmount > 0 ? "bonus" : "play", bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: lockedUser.winWalletBalance };
+      return { released: true, scoreDelta: Number(settings.leaderboardCardReleasePoints), wallet: bonusAmount > 0 ? "bonus" : playAmount > 0 ? "play" : "win", bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter };
     });
     logger.info({ roundId: round.id, telegramId: user.telegramId, cardNumber, wallet: result.wallet, released: result.released }, "Bingo card release processed");
     await publishBingoRoundUpdate();
@@ -457,20 +460,21 @@ router.post("/bingo/cards", async (req, res) => {
         return { cards, playWalletBalance: lockedUser.playWalletBalance, winWalletBalance: lockedUser.winWalletBalance };
       }
       const total = missing.length * CARD_STAKE;
-      const split = splitCardStake(lockedUser.bonusWalletBalance, lockedUser.playWalletBalance, total);
-      if (!split) throw Object.assign(new Error("Insufficient balance in bonus and play wallets"), { status: 402 });
+      const split = splitCardStake(lockedUser.bonusWalletBalance, lockedUser.playWalletBalance, lockedUser.winWalletBalance, total);
+      if (!split) throw Object.assign(new Error("Insufficient balance in bonus, play, and win wallets"), { status: 402 });
       if (missing.length) await tx.insert(bingoPlayerCards).values(missing.map((cardNumber) => ({ roundId: lockedRound.id, telegramId: user.telegramId, cardNumber, grid: buildCard(cardNumber) })));
       const bonusAfter = (Number(lockedUser.bonusWalletBalance) - split.fromBonus).toFixed(2);
       const playAfter = (Number(lockedUser.playWalletBalance) - split.fromPlay).toFixed(2);
-      await tx.update(telegramUsers).set({ bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, bonusWalletLastPlayedAt: new Date(), updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
+      const winAfter = (Number(lockedUser.winWalletBalance) - split.fromWin).toFixed(2);
+      await tx.update(telegramUsers).set({ bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter, bonusWalletLastPlayedAt: new Date(), updatedAt: new Date() }).where(eq(telegramUsers.telegramId, user.telegramId));
       if (total > 0) {
-        await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", wallet: split.fromBonus > 0 ? "bonus" : "cash_play", amount: (-total).toFixed(2), balanceBefore: total.toFixed(2), balanceAfter: "0.00", status: "completed", reference, metadata: { roundId: lockedRound.id, cardNumbers: missing, stake: CARD_STAKE, bonusAmount: split.fromBonus, playAmount: split.fromPlay } });
+        await tx.insert(walletTransactions).values({ telegramId: user.telegramId, type: "adjustment", wallet: split.fromBonus > 0 ? "bonus" : split.fromPlay > 0 ? "cash_play" : "win", amount: (-total).toFixed(2), balanceBefore: total.toFixed(2), balanceAfter: "0.00", status: "completed", reference, metadata: { roundId: lockedRound.id, cardNumbers: missing, stake: CARD_STAKE, bonusAmount: split.fromBonus, playAmount: split.fromPlay, winAmount: split.fromWin } });
         for (const cardNumber of missing) {
           await recordLeaderboardScore(tx, lockedRound.id, user.telegramId, "card_purchase", Number(settings.leaderboardCardPurchasePoints), `leaderboard:purchase:${lockedRound.id}:${user.telegramId}:${cardNumber}`);
         }
       }
       const cards = await tx.select().from(bingoPlayerCards).where(and(eq(bingoPlayerCards.roundId, lockedRound.id), eq(bingoPlayerCards.telegramId, user.telegramId))).orderBy(asc(bingoPlayerCards.cardNumber));
-      return { cards, bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: lockedUser.winWalletBalance };
+      return { cards, bonusWalletBalance: bonusAfter, playWalletBalance: playAfter, winWalletBalance: winAfter };
     });
     await publishBingoRoundUpdate();
     res.status(201).json({ roundId: round.id, cards: result.cards, bonusWalletBalance: result.bonusWalletBalance, playWalletBalance: result.playWalletBalance, winWalletBalance: result.winWalletBalance });
