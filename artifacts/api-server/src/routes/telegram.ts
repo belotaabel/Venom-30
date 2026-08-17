@@ -1109,6 +1109,8 @@ router.post("/telegram/auth", async (req, res) => {
       firstName: true,
       lastName: true,
       playWalletBalance: true,
+      bonusWalletBalance: true,
+      bonusWalletLastPlayedAt: true,
       winWalletBalance: true,
     },
   });

@@ -51,6 +51,7 @@ const TOTAL_NUMBERS = 500;
 const STAKE = 10;
 const START_COUNTDOWN = 60;
 const WINNER_DISPLAY_DURATION = 8000;
+const BONUS_RESET_HOURS = 36;
 const GAME_ID = '#86195';
 const CALL_INTERVAL = 2500;
 const ballAudioSources: Record<number, string> = {
@@ -138,6 +139,8 @@ type Profile = {
   firstName?: string;
   lastName?: string | null;
   playWalletBalance?: string;
+  bonusWalletBalance?: string;
+  bonusWalletLastPlayedAt?: string | null;
   winWalletBalance?: string;
   isAdmin?: boolean;
 };
@@ -355,9 +358,30 @@ function NumberGrid({ selected, taken, onToggle, canSelect, maxCards }: { select
 
 function WalletPanel() {
   const { profile } = useTelegramBridge();
+  const [resetSeconds, setResetSeconds] = useState(0);
+  useEffect(() => {
+    const updateResetCountdown = () => {
+      const lastPlayedAt = profile?.bonusWalletLastPlayedAt;
+      if (!lastPlayedAt) {
+        setResetSeconds(0);
+        return;
+      }
+      setResetSeconds(Math.max(0, Math.ceil((new Date(lastPlayedAt).getTime() + BONUS_RESET_HOURS * 60 * 60 * 1000 - Date.now()) / 1000)));
+    };
+    updateResetCountdown();
+    const timer = window.setInterval(updateResetCountdown, 1000);
+    return () => window.clearInterval(timer);
+  }, [profile?.bonusWalletLastPlayedAt]);
+  const formatResetCountdown = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+    return `${hours}ሰ ${minutes.toString().padStart(2, '0')}ደ ${remainingSeconds.toString().padStart(2, '0')}ሰከ`;
+  };
   const [walletAction, setWalletAction] = useState<'deposit' | 'withdrawal' | null>(null);
   const [walletError, setWalletError] = useState('');
   const playWallet = profile?.playWalletBalance ?? '—';
+  const bonusWallet = profile?.bonusWalletBalance ?? '—';
   const winWallet = profile?.winWalletBalance ?? '—';
 
   const startWalletFlow = async (action: 'deposit' | 'withdrawal') => {
@@ -392,6 +416,11 @@ function WalletPanel() {
             <div className="text-lg font-extrabold leading-tight">🏆 WIN<br />WALLET</div>
             <div data-testid="text-win-wallet-balance" className="mt-3 font-mono text-2xl font-bold">{winWallet}</div>
           </div>
+        </div>
+        <div className="mt-4 rounded-2xl border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] px-4 py-3 text-center">
+          <div className="text-xs font-bold text-[hsl(var(--accent))]">🎁 BONUS WALLET</div>
+          <div data-testid="text-bonus-wallet-balance" className="mt-1 font-mono text-xl font-bold text-[hsl(var(--accent))]">{bonusWallet}</div>
+          <div data-testid="text-bonus-reset-countdown" className="mt-1 text-[11px] font-bold text-[hsl(var(--foreground)/.75)]">{resetSeconds > 0 ? `ሪሴት በ ${formatResetCountdown(resetSeconds)} ውስጥ` : 'ሪሴት ለመጀመር በቅርቡ'}</div>
         </div>
       </section>
       <div className="mt-6 grid grid-cols-2 gap-5">
