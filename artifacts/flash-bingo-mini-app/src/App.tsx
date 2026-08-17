@@ -1391,6 +1391,37 @@ function AdminPanel() {
     }
   };
 
+  const downloadPendingWithdrawals = () => {
+    if (!requests?.withdrawals.length) return;
+    const generatedAt = new Date();
+    const lines = [
+      'VENOM BINGO — PENDING WITHDRAWALS',
+      '===================================',
+      `Generated: ${generatedAt.toLocaleString()}`,
+      `Total requests: ${requests.withdrawals.length}`,
+      `Total amount: ${requests.withdrawals.reduce((total, request) => total + Number(request.amount), 0).toFixed(2)} ETB`,
+      '',
+      ...requests.withdrawals.map((request, index) => [
+        `${index + 1}. WITHDRAWAL #${request.id}`,
+        `   Amount: ${request.amount} ETB`,
+        `   Telegram ID: ${request.telegramId}`,
+        `   Wallet: ${request.walletType === 'agent' ? 'Agent Wallet' : 'Win Wallet'}`,
+        `   Telebirr: ${request.phone ?? '—'}`,
+        `   Owner: ${request.ownerName ?? '—'}`,
+        `   Requested: ${new Date(request.createdAt).toLocaleString()}`,
+        '   Status: PENDING',
+        '',
+      ].join('\\n')),
+    ].join('\\n');
+    const blob = new Blob([`\\ufeff${lines}`], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `venom-pending-withdrawals-${generatedAt.toISOString().slice(0, 10)}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const renderRequest = (request: AdminRequest, type: AdminRequestType) => {
     const actionKeyForRequest = `${type}-${request.id}`;
     return <article key={actionKeyForRequest} className="depth-card rounded-2xl border border-[hsl(136_58%_25%)] bg-[hsl(156_48%_10%)] p-4">
@@ -1505,7 +1536,7 @@ function AdminPanel() {
           <div className="space-y-3">{requests.deposits.length ? requests.deposits.map((request) => renderRequest(request, 'deposit')) : <p className="depth-surface rounded-2xl p-4 text-xs text-[hsl(var(--muted-foreground))]">ምንም የሚጠባበቅ ዲፖዚት የለም።</p>}</div>
         </section>
         <section>
-          <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-extrabold tracking-[.08em]">💸 WITHDRAWALS</h2><span className="rounded-full bg-[hsl(var(--primary)/.15)] px-2 py-1 text-xs font-bold text-[hsl(var(--primary))]">{requests.withdrawals.length}</span></div>
+          <div className="mb-3 flex items-center justify-between gap-2"><h2 className="text-sm font-extrabold tracking-[.08em]">💸 WITHDRAWALS</h2><div className="flex items-center gap-2"><span className="rounded-full bg-[hsl(var(--primary)/.15)] px-2 py-1 text-xs font-bold text-[hsl(var(--primary))]">{requests.withdrawals.length}</span><button type="button" data-testid="button-download-pending-withdrawals" disabled={!requests.withdrawals.length} onClick={downloadPendingWithdrawals} className="rounded-lg border border-[hsl(var(--accent)/.5)] bg-[hsl(var(--accent)/.12)] px-2 py-1 text-[10px] font-extrabold text-[hsl(var(--accent))] disabled:cursor-not-allowed disabled:opacity-40">TXT ላክ</button></div></div>
           <div className="space-y-3">{requests.withdrawals.length ? requests.withdrawals.map((request) => renderRequest(request, 'withdrawal')) : <p className="depth-surface rounded-2xl p-4 text-xs text-[hsl(var(--muted-foreground))]">ምንም የሚጠባበቅ ዊዝድሮ የለም።</p>}</div>
         </section>
         </div>
