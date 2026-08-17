@@ -46,7 +46,7 @@ declare global {
 }
 
 const queryClient = new QueryClient();
-const MAX_CARDS = 10;
+const MAX_CARDS = 4;
 const TOTAL_NUMBERS = 500;
 const STAKE = 10;
 const START_COUNTDOWN = 60;

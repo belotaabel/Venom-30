@@ -11,7 +11,7 @@ export const gameSettings = pgTable("game_settings", {
   leaderboardFirstPercentage: numeric("leaderboard_first_percentage", { precision: 5, scale: 2 }).notNull().default("50.00"),
   leaderboardSecondPercentage: numeric("leaderboard_second_percentage", { precision: 5, scale: 2 }).notNull().default("30.00"),
   leaderboardThirdPercentage: numeric("leaderboard_third_percentage", { precision: 5, scale: 2 }).notNull().default("20.00"),
-  maxCardsPerPlayer: numeric("max_cards_per_player", { precision: 3, scale: 0 }).notNull().default("10"),
+  maxCardsPerPlayer: numeric("max_cards_per_player", { precision: 3, scale: 0 }).notNull().default("4"),
   leaderboardCardPurchasePoints: numeric("leaderboard_card_purchase_points", { precision: 8, scale: 2 }).notNull().default("1.00"),
   leaderboardCardReleasePoints: numeric("leaderboard_card_release_points", { precision: 8, scale: 2 }).notNull().default("-1.00"),
   leaderboardWinPoints: numeric("leaderboard_win_points", { precision: 8, scale: 2 }).notNull().default("5.00"),
