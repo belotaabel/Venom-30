@@ -114,6 +114,7 @@ export async function finalizeLeaderboardRound(
       await tx.insert(walletTransactions).values({
         telegramId: entry.telegramId,
         type: "leaderboard_payout",
+        wallet: "win",
         amount,
         balanceBefore,
         balanceAfter,

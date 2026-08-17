@@ -305,11 +305,12 @@ async function sendProfileAccountMessage(chatId: number, telegramId?: number) {
   const name = user ? [user.firstName, user.lastName].filter(Boolean).join(" ") : "*****";
   const phone = user?.phoneNumber ?? "የለም";
   const playWallet = user?.playWalletBalance ?? "0.00";
+  const bonusWallet = user?.bonusWalletBalance ?? "0.00";
   const winWallet = user?.winWalletBalance ?? "0.00";
 
   await telegramRequest("sendMessage", {
     chat_id: chatId,
-    text: `👤 Profile & Account\n\n👤 ፕሮፋይል\n\nስም: ${name}\nስልክ: ${phone}\n\n💰 play wallet : ${playWallet} ETB\n🏆 win wallet : ${winWallet} ETB`,
+    text: `👤 Profile & Account\n\n👤 ፕሮፋይል\n\nስም: ${name}\nስልክ: ${phone}\n\n💰 play wallet : ${playWallet} ETB\n🎁 bonus wallet : ${bonusWallet} ETB\n🏆 win wallet : ${winWallet} ETB`,
     reply_markup: getMainKeyboard(chatId),
   });
 }
@@ -562,12 +563,12 @@ async function sendSuspiciousUserReport(chatId: number) {
 }
 
 async function sendTopBalanceReport(chatId: number) {
-  const users = await db.select({ telegramId: telegramUsers.telegramId, name: telegramUsers.firstName, phone: telegramUsers.phoneNumber, play: telegramUsers.playWalletBalance, win: telegramUsers.winWalletBalance })
+  const users = await db.select({ telegramId: telegramUsers.telegramId, name: telegramUsers.firstName, phone: telegramUsers.phoneNumber, play: telegramUsers.playWalletBalance, bonus: telegramUsers.bonusWalletBalance, win: telegramUsers.winWalletBalance })
     .from(telegramUsers)
-    .orderBy(desc(sql`(${telegramUsers.playWalletBalance} + ${telegramUsers.winWalletBalance})`))
+    .orderBy(desc(sql`(${telegramUsers.playWalletBalance} + ${telegramUsers.bonusWalletBalance} + ${telegramUsers.winWalletBalance})`))
     .limit(20);
   const lines = users.length
-    ? users.map((user, index) => `${index + 1}. ${user.name} — ${(Number(user.play) + Number(user.win)).toFixed(2)} ብር (Play: ${user.play}, Win: ${user.win})\\n   ${user.phone} · ID: ${user.telegramId}`).join("\\n")
+    ? users.map((user, index) => `${index + 1}. ${user.name} — ${(Number(user.play) + Number(user.bonus) + Number(user.win)).toFixed(2)} ብር (Play: ${user.play}, Bonus: ${user.bonus}, Win: ${user.win})\\n   ${user.phone} · ID: ${user.telegramId}`).join("\\n")
     : "ምንም User አልተገኘም።";
   await telegramRequest("sendMessage", { chat_id: chatId, text: `🏦 Top Balance Users\\n\\n${lines}` });
 }
@@ -640,7 +641,7 @@ async function processAdminDecision(type: "deposit" | "withdrawal", action: "app
       return;
     }
 
-    const after = type === "deposit" ? before + creditedAmount : withdrawalWallet === "win" ? before : before - amount;
+    const after = type === "deposit" ? before + amount : withdrawalWallet === "win" ? before : before - amount;
     const reference = `${type}-request-${id}`;
     if (type === "withdrawal" && withdrawalWallet === "win") {
       await tx.update(walletTransactions).set({ status: "completed" }).where(and(eq(walletTransactions.reference, reference), eq(walletTransactions.status, "pending")));
@@ -655,7 +656,7 @@ async function processAdminDecision(type: "deposit" | "withdrawal", action: "app
       metadata: { requestId: id, approvedBy: adminChatId, source: "telegram_admin", wallet: type === "withdrawal" ? withdrawalWallet : "play", ...(type === "deposit" ? { depositAmount: amount, bonusPercentage: Number(settings.depositBonusPercentage), bonusAmount } : {}) },
     });
     if (type === "deposit" || withdrawalWallet === "agent") await tx.update(telegramUsers).set({
-      ...(type === "deposit" ? { playWalletBalance: after.toFixed(2) } : { winWalletBalance: after.toFixed(2) }),
+      ...(type === "deposit" ? { playWalletBalance: after.toFixed(2), bonusWalletBalance: (Number(user.bonusWalletBalance) + bonusAmount).toFixed(2) } : { winWalletBalance: after.toFixed(2) }),
       updatedAt: new Date(),
     }).where(eq(telegramUsers.telegramId, request.telegramId));
     const updatedAt = new Date();
@@ -741,7 +742,7 @@ async function saveTelegramContact(message: NonNullable<TelegramUpdate["message"
   await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(telegramUsers)
-      .values({ ...registration, playWalletBalance: settings.registrationBonus, winWalletBalance: "0.00" })
+      .values({ ...registration, playWalletBalance: "0.00", bonusWalletBalance: settings.registrationBonus, bonusWalletLastPlayedAt: new Date(), winWalletBalance: "0.00" })
       .onConflictDoNothing({ target: telegramUsers.telegramId })
       .returning({ telegramId: telegramUsers.telegramId });
     isNewRegistration = Boolean(inserted);
@@ -774,11 +775,12 @@ async function saveTelegramContact(message: NonNullable<TelegramUpdate["message"
 
     const rewardAmount = agentAttribution && !referral ? "10.00" : settings.inviteBonus;
     const reference = `referral:signup:${user.id}`;
-    const balanceBefore = Number(inviter.playWalletBalance);
+    const balanceBefore = Number(inviter.bonusWalletBalance);
     const balanceAfter = (balanceBefore + Number(rewardAmount)).toFixed(2);
     const [ledger] = await tx.insert(walletTransactions).values({
       telegramId: inviter.telegramId,
-      type: "adjustment",
+      type: "invite_bonus",
+      wallet: "bonus",
       amount: rewardAmount,
       balanceBefore: balanceBefore.toFixed(2),
       balanceAfter,
@@ -792,7 +794,7 @@ async function saveTelegramContact(message: NonNullable<TelegramUpdate["message"
     }).onConflictDoNothing({ target: walletTransactions.reference }).returning({ id: walletTransactions.id });
     if (!ledger) return;
 
-    await tx.update(telegramUsers).set({ playWalletBalance: balanceAfter, updatedAt: new Date() })
+    await tx.update(telegramUsers).set({ bonusWalletBalance: balanceAfter, bonusWalletLastPlayedAt: new Date(), updatedAt: new Date() })
       .where(eq(telegramUsers.telegramId, inviter.telegramId));
     rewardedInviterTelegramId = inviter.telegramId;
     referralRewardAmount = rewardAmount;
